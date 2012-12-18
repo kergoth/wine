@@ -1126,6 +1126,94 @@ static void test_CreatePipe(void)
     SleepEx(0, TRUE); /* get rid of apc */
 }
 
+static void test_close(void)
+{
+    HANDLE hnp;
+    HANDLE hFile;
+    static const char obuf[] = "Bit Bucket";
+    char ibuf[32];
+    DWORD written;
+    DWORD readden;
+
+    hnp = CreateNamedPipe(PIPENAME, PIPE_ACCESS_DUPLEX,
+                          PIPE_TYPE_MESSAGE | PIPE_READMODE_MESSAGE | PIPE_WAIT,
+                          /* nMaxInstances */ 1,
+                          /* nOutBufSize */ 1024,
+                          /* nInBufSize */ 1024,
+                          /* nDefaultWait */ NMPWAIT_USE_DEFAULT_WAIT,
+                          /* lpSecurityAttrib */ NULL);
+    ok(hnp != INVALID_HANDLE_VALUE, "CreateNamedPipe failed\n");
+
+    hFile = CreateFileA(PIPENAME, GENERIC_READ | GENERIC_WRITE, 0, NULL, OPEN_EXISTING, 0, 0);
+    ok(hFile != INVALID_HANDLE_VALUE, "CreateFile failed (%d)\n", GetLastError());
+
+    /* don't try to do i/o if one side couldn't be opened, as it hangs */
+    if (hFile != INVALID_HANDLE_VALUE) {
+        /* Make sure we can read and write a few bytes in both directions */
+        memset(ibuf, 0, sizeof(ibuf));
+        ok(WriteFile(hnp, obuf, sizeof(obuf), &written, NULL), "WriteFile\n");
+        ok(written == sizeof(obuf), "write file len 1\n");
+        ok(PeekNamedPipe(hFile, NULL, 0, NULL, &readden, NULL), "Peek\n");
+        ok(readden == sizeof(obuf), "got %d bytes\n", readden);
+
+        /* close server end without disconnecting */
+        ok(CloseHandle(hnp), "CloseHandle() failed: %08x\n", GetLastError());
+
+        ok(ReadFile(hFile, ibuf, 0, &readden, NULL), "ReadFile() failed: %08x\n", GetLastError());
+        ok(readden == 0, "got %d bytes\n", readden);
+
+        memset(ibuf, 0, sizeof(ibuf));
+        ok(ReadFile(hFile, ibuf, sizeof(ibuf), &readden, NULL), "ReadFile() failed: %08x\n", GetLastError());
+        ok(readden == sizeof(obuf), "got %d bytes\n", readden);
+        /* pipe is empty now */
+
+        ok(!ReadFile(hFile, ibuf, 0, &readden, NULL), "ReadFile() succeeded\n");
+        ok(GetLastError() == ERROR_BROKEN_PIPE, "GetLastError() returned %08x, expected ERROR_BROKEN_PIPE\n", GetLastError());
+        SetLastError(0);
+
+        CloseHandle(hFile);
+    }
+
+    hnp = CreateNamedPipe(PIPENAME, PIPE_ACCESS_DUPLEX,
+                          PIPE_TYPE_MESSAGE | PIPE_READMODE_MESSAGE | PIPE_WAIT,
+                          /* nMaxInstances */ 1,
+                          /* nOutBufSize */ 1024,
+                          /* nInBufSize */ 1024,
+                          /* nDefaultWait */ NMPWAIT_USE_DEFAULT_WAIT,
+                          /* lpSecurityAttrib */ NULL);
+    ok(hnp != INVALID_HANDLE_VALUE, "CreateNamedPipe failed\n");
+
+    hFile = CreateFileA(PIPENAME, GENERIC_READ | GENERIC_WRITE, 0, NULL, OPEN_EXISTING, 0, 0);
+    ok(hFile != INVALID_HANDLE_VALUE, "CreateFile failed (%d)\n", GetLastError());
+
+    if (hFile != INVALID_HANDLE_VALUE) {
+        /* Make sure we can read and write a few bytes in both directions */
+        memset(ibuf, 0, sizeof(ibuf));
+        ok(WriteFile(hFile, obuf, sizeof(obuf), &written, NULL), "WriteFile\n");
+        ok(written == sizeof(obuf), "write file len 1\n");
+        ok(PeekNamedPipe(hnp, NULL, 0, NULL, &readden, NULL), "Peek\n");
+        ok(readden == sizeof(obuf), "got %d bytes\n", readden);
+
+        /* close client end without disconnecting */
+        ok(CloseHandle(hFile), "CloseHandle() failed: %08x\n", GetLastError());
+
+        /* you'd think ERROR_MORE_DATA, but no */
+        ok(ReadFile(hnp, ibuf, 0, &readden, NULL), "ReadFile() failed: %08x\n", GetLastError());
+        ok(readden == 0, "got %d bytes\n", readden);
+
+        memset(ibuf, 0, sizeof(ibuf));
+        ok(ReadFile(hnp, ibuf, sizeof(ibuf), &readden, NULL), "ReadFile() failed: %08x\n", GetLastError());
+        ok(readden == sizeof(obuf), "got %d bytes\n", readden);
+        /* pipe is empty now */
+
+        ok(!ReadFile(hnp, ibuf, 0, &readden, NULL), "ReadFile() succeeded\n");
+        ok(GetLastError() == ERROR_BROKEN_PIPE, "GetLastError() returned %08x, expected ERROR_BROKEN_PIPE\n", GetLastError());
+        SetLastError(0);
+
+        CloseHandle(hnp);
+    }
+}
+
 struct named_pipe_client_params
 {
     DWORD security_flags;
@@ -1880,4 +1968,5 @@ START_TEST(pipe)
     test_overlapped();
     test_NamedPipeHandleState();
     test_readfileex_pending();
+    test_close();
 }
