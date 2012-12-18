@@ -622,6 +622,11 @@ typedef struct _FILE_MAILSLOT_SET_INFORMATION {
     LARGE_INTEGER ReadTimeout;
 } FILE_MAILSLOT_SET_INFORMATION, *PFILE_MAILSLOT_SET_INFORMATION;
 
+typedef struct _FILE_PIPE_INFORMATION {
+    ULONG ReadMode;
+    ULONG CompletionMode;
+} FILE_PIPE_INFORMATION, *PFILE_PIPE_INFORMATION;
+
 typedef struct _FILE_PIPE_LOCAL_INFORMATION {
     ULONG NamedPipeType;
     ULONG NamedPipeConfiguration;
@@ -1136,7 +1141,7 @@ typedef struct _SYSTEM_CPU_INFORMATION {
 #define CPU_FEATURE_VME    0x00000005   /* Virtual 86 Mode Extensions */
 #define CPU_FEATURE_TSC    0x00000002   /* Time Stamp Counter available */
 #define CPU_FEATURE_CMOV   0x00000008   /* Conditional Move instruction*/
-#define CPU_FEATURE_PGE    0x00000014   /* Page table Entry Global bit */ 
+#define CPU_FEATURE_PGE    0x00000014   /* Page table Entry Global bit */
 #define CPU_FEATURE_PSE    0x00000024   /* Page Size Extension */
 #define CPU_FEATURE_MTRR   0x00000040   /* Memory Type Range Registers */
 #define CPU_FEATURE_CX8    0x00000080   /* Compare and eXchange 8 byte instr. */
@@ -1601,6 +1606,12 @@ typedef struct _RTL_HANDLE_TABLE
 /* options for pipe's type */
 #define FILE_PIPE_TYPE_MESSAGE          0x00000001
 #define FILE_PIPE_TYPE_BYTE             0x00000000
+/* options for pipe's message mode */
+#define FILE_PIPE_MESSAGE_MODE          0x00000001
+#define FILE_PIPE_BYTE_STREAM_MODE      0x00000000
+/* options for pipe's blocking mode */
+#define FILE_PIPE_COMPLETE_OPERATION    0x00000001
+#define FILE_PIPE_QUEUE_OPERATION       0x00000000
 /* and client / server end */
 #define FILE_PIPE_SERVER_END            0x00000001
 #define FILE_PIPE_CLIENT_END            0x00000000

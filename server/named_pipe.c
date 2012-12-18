@@ -1146,3 +1146,42 @@ DECL_HANDLER(get_named_pipe_info)
         release_object( end );
     }
 }
+
+DECL_HANDLER(set_named_pipe_info)
+{
+    struct pipe_end *end;
+    NTSTATUS status = STATUS_SUCCESS;
+
+    if ((end = get_pipe_end_obj( current->process, req->handle, FILE_WRITE_ATTRIBUTES )))
+    {
+        if (req->flags & NAMED_PIPE_MESSAGE_STREAM_READ)
+        {
+            if (!(end->flags & NAMED_PIPE_MESSAGE_STREAM_WRITE))
+                status = STATUS_INVALID_PARAMETER;
+            else
+                end->flags |= NAMED_PIPE_MESSAGE_STREAM_READ;
+        }
+        else
+        {
+            end->flags &= (~(unsigned int)NAMED_PIPE_MESSAGE_STREAM_READ);
+        }
+
+        if (status)
+        {
+            set_error(status);
+        }
+        else
+        {
+            if (req->flags & NAMED_PIPE_NONBLOCKING_MODE)
+            {
+                end->flags |= NAMED_PIPE_NONBLOCKING_MODE;
+            }
+            else
+            {
+                end->flags &= (~(unsigned int)NAMED_PIPE_NONBLOCKING_MODE);
+            }
+        }
+
+        release_object( end );
+    }
+}

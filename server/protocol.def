@@ -2248,6 +2248,12 @@ enum message_type
 @END
 
 
+@REQ(set_named_pipe_info)
+    obj_handle_t   handle;
+    unsigned int   flags;
+@END
+
+
 /* Create a window */
 @REQ(create_window)
     user_handle_t  parent;      /* parent window */
