@@ -1695,12 +1695,24 @@ BOOL WINAPI GetNamedPipeHandleStateA(
     LPDWORD lpMaxCollectionCount, LPDWORD lpCollectDataTimeout,
     LPSTR lpUsername, DWORD nUsernameMaxSize)
 {
-    FIXME("%p %p %p %p %p %p %d\n",
-          hNamedPipe, lpState, lpCurInstances,
-          lpMaxCollectionCount, lpCollectDataTimeout,
-          lpUsername, nUsernameMaxSize);
+    if (lpUsername)
+    {
+        FIXME("(%p, %p, %p, %p, %p, %p, %d) partial stub!\n",
+            hNamedPipe, lpState, lpCurInstances,
+            lpMaxCollectionCount, lpCollectDataTimeout,
+            lpUsername, nUsernameMaxSize);
+        *lpUsername = 0;
+    }
+    else
+    {
+        TRACE("(%p, %p, %p, %p, %p, %p, %d)\n",
+            hNamedPipe, lpState, lpCurInstances,
+            lpMaxCollectionCount, lpCollectDataTimeout,
+            lpUsername, nUsernameMaxSize);
+    }
 
-    return FALSE;
+    return GetNamedPipeHandleStateW(hNamedPipe, lpState, lpCurInstances,
+            lpMaxCollectionCount, lpCollectDataTimeout, NULL, 0);
 }
 
 /***********************************************************************
@@ -1711,12 +1723,55 @@ BOOL WINAPI GetNamedPipeHandleStateW(
     LPDWORD lpMaxCollectionCount, LPDWORD lpCollectDataTimeout,
     LPWSTR lpUsername, DWORD nUsernameMaxSize)
 {
-    FIXME("%p %p %p %p %p %p %d\n",
-          hNamedPipe, lpState, lpCurInstances,
-          lpMaxCollectionCount, lpCollectDataTimeout,
-          lpUsername, nUsernameMaxSize);
+    IO_STATUS_BLOCK iosb;
+    NTSTATUS status;
 
-    return FALSE;
+    if (lpMaxCollectionCount || lpCollectDataTimeout || lpUsername)
+    {
+        FIXME("(%p, %p, %p, %p, %p, %p, %d) partial stub!\n",
+            hNamedPipe, lpState, lpCurInstances,
+            lpMaxCollectionCount, lpCollectDataTimeout,
+            lpUsername, nUsernameMaxSize);
+        if (lpUsername) *lpUsername = 0;
+    }
+    else
+    {
+        TRACE("(%p, %p, %p, %p, %p, %p, %d)\n",
+            hNamedPipe, lpState, lpCurInstances,
+            lpMaxCollectionCount, lpCollectDataTimeout,
+            lpUsername, nUsernameMaxSize);
+    }
+
+    if (lpState)
+    {
+        FILE_PIPE_INFORMATION fpi;
+        status = NtQueryInformationFile(hNamedPipe, &iosb, &fpi, sizeof(fpi),
+                                        FilePipeInformation);
+        if (status)
+        {
+            SetLastError( RtlNtStatusToDosError(status) );
+            return FALSE;
+        }
+
+        *lpState = (fpi.ReadMode? PIPE_READMODE_MESSAGE : PIPE_READMODE_BYTE) |
+                   (fpi.CompletionMode? PIPE_NOWAIT : PIPE_WAIT);
+    }
+
+    if (lpCurInstances)
+    {
+        FILE_PIPE_LOCAL_INFORMATION fpli;
+        status = NtQueryInformationFile(hNamedPipe, &iosb, &fpli, sizeof(fpli),
+                                        FilePipeLocalInformation);
+        if (status)
+        {
+            SetLastError( RtlNtStatusToDosError(status) );
+            return FALSE;
+        }
+
+        *lpCurInstances = fpli.CurrentInstances;
+    }
+
+    return TRUE;
 }
 
 /***********************************************************************
@@ -1726,11 +1781,43 @@ BOOL WINAPI SetNamedPipeHandleState(
     HANDLE hNamedPipe, LPDWORD lpMode, LPDWORD lpMaxCollectionCount,
     LPDWORD lpCollectDataTimeout)
 {
-    /* should be a fixme, but this function is called a lot by the RPC
-     * runtime, and it slows down InstallShield a fair bit. */
-    WARN("stub: %p %p/%d %p %p\n",
-          hNamedPipe, lpMode, lpMode ? *lpMode : 0, lpMaxCollectionCount, lpCollectDataTimeout);
-    return FALSE;
+    BOOL ret = FALSE;
+    if (lpMaxCollectionCount || lpCollectDataTimeout)
+    {
+        FIXME("(%p, %p/%d, %p, %p) partial stub!\n",
+              hNamedPipe, lpMode, lpMode ? *lpMode : 0,
+              lpMaxCollectionCount, lpCollectDataTimeout);
+    }
+    else
+    {
+        TRACE("(%p, %p/%d, %p, %p)\n",
+              hNamedPipe, lpMode, lpMode ? *lpMode : 0,
+              lpMaxCollectionCount, lpCollectDataTimeout);
+    }
+
+    if (lpMode)
+    {
+        FILE_PIPE_INFORMATION fpi;
+        IO_STATUS_BLOCK iosb;
+        NTSTATUS status;
+
+        if (*lpMode & (~(PIPE_NOWAIT|PIPE_READMODE_MESSAGE)))
+        {
+            SetLastError(ERROR_INVALID_PARAMETER);
+        }
+        else
+        {
+            fpi.CompletionMode = (*lpMode & PIPE_NOWAIT)? FILE_PIPE_COMPLETE_OPERATION : FILE_PIPE_QUEUE_OPERATION;
+            fpi.ReadMode = (*lpMode & PIPE_READMODE_MESSAGE)? FILE_PIPE_MESSAGE_MODE : FILE_PIPE_BYTE_STREAM_MODE;
+
+            if ((status = NtSetInformationFile(hNamedPipe, &iosb, &fpi, sizeof(fpi), FilePipeInformation)))
+                SetLastError( RtlNtStatusToDosError(status) );
+            else
+                ret = TRUE;
+        }
+    }
+
+    return ret;
 }
 
 /***********************************************************************
@@ -1793,14 +1880,11 @@ BOOL WINAPI CallNamedPipeW(
     mode = PIPE_READMODE_MESSAGE;
     ret = SetNamedPipeHandleState(pipe, &mode, NULL, NULL);
 
-    /* Currently SetNamedPipeHandleState() is a stub returning FALSE */
-    if (ret) FIXME("Now that SetNamedPipeHandleState() is more than a stub, please update CallNamedPipeW\n");
-    /*
     if (!ret)
     {
         CloseHandle(pipe);
         return FALSE;
-    }*/
+    }
 
     ret = TransactNamedPipe(pipe, lpInput, lpInputSize, lpOutput, lpOutputSize, lpBytesRead, NULL);
     CloseHandle(pipe);

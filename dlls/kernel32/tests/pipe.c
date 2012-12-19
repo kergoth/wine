@@ -228,9 +228,7 @@ static void test_CreateNamedPipe(int pipemode)
             ok(!SetNamedPipeHandleState(hFile, &lpmode, NULL, NULL), "Change mode\n");
         }
         else {
-            todo_wine {
-                ok(SetNamedPipeHandleState(hFile, &lpmode, NULL, NULL), "Change mode\n");
-            }
+            ok(SetNamedPipeHandleState(hFile, &lpmode, NULL, NULL), "Change mode\n");
         
             memset(ibuf, 0, sizeof(ibuf));
             ok(WriteFile(hnp, obuf, sizeof(obuf), &written, NULL), "WriteFile5a\n");
@@ -1743,7 +1741,6 @@ static void test_NamedPipeHandleState(void)
         /* lpSecurityAttrib */ NULL);
     ok(server != INVALID_HANDLE_VALUE, "cf failed\n");
     ret = GetNamedPipeHandleState(server, NULL, NULL, NULL, NULL, NULL, 0);
-    todo_wine
     ok(ret, "GetNamedPipeHandleState failed: %d\n", GetLastError());
     ret = GetNamedPipeHandleState(server, &state, &instances, NULL, NULL, NULL,
         0);
@@ -1768,7 +1765,6 @@ static void test_NamedPipeHandleState(void)
     state = PIPE_READMODE_MESSAGE;
     SetLastError(0xdeadbeef);
     ret = SetNamedPipeHandleState(server, &state, NULL, NULL);
-    todo_wine
     ok(!ret && GetLastError() == ERROR_INVALID_PARAMETER,
        "expected ERROR_INVALID_PARAMETER, got %d\n", GetLastError());
 
@@ -1778,13 +1774,11 @@ static void test_NamedPipeHandleState(void)
 
     state = PIPE_READMODE_BYTE;
     ret = SetNamedPipeHandleState(client, &state, NULL, NULL);
-    todo_wine
     ok(ret, "SetNamedPipeHandleState failed: %d\n", GetLastError());
     /* A byte-mode pipe client can't be changed to message mode, either. */
     state = PIPE_READMODE_MESSAGE;
     SetLastError(0xdeadbeef);
     ret = SetNamedPipeHandleState(server, &state, NULL, NULL);
-    todo_wine
     ok(!ret && GetLastError() == ERROR_INVALID_PARAMETER,
        "expected ERROR_INVALID_PARAMETER, got %d\n", GetLastError());
 
@@ -1800,7 +1794,6 @@ static void test_NamedPipeHandleState(void)
         /* lpSecurityAttrib */ NULL);
     ok(server != INVALID_HANDLE_VALUE, "cf failed\n");
     ret = GetNamedPipeHandleState(server, NULL, NULL, NULL, NULL, NULL, 0);
-    todo_wine
     ok(ret, "GetNamedPipeHandleState failed: %d\n", GetLastError());
     ret = GetNamedPipeHandleState(server, &state, &instances, NULL, NULL, NULL,
         0);
@@ -1816,7 +1809,6 @@ static void test_NamedPipeHandleState(void)
      */
     state = PIPE_READMODE_BYTE;
     ret = SetNamedPipeHandleState(server, &state, NULL, NULL);
-    todo_wine
     ok(ret, "SetNamedPipeHandleState failed: %d\n", GetLastError());
 
     client = CreateFileA(PIPENAME, GENERIC_READ|GENERIC_WRITE, 0, NULL,
@@ -1825,13 +1817,11 @@ static void test_NamedPipeHandleState(void)
 
     state = PIPE_READMODE_MESSAGE;
     ret = SetNamedPipeHandleState(client, &state, NULL, NULL);
-    todo_wine
     ok(ret, "SetNamedPipeHandleState failed: %d\n", GetLastError());
     /* A message-mode pipe client can also be changed to byte mode.
      */
     state = PIPE_READMODE_BYTE;
     ret = SetNamedPipeHandleState(client, &state, NULL, NULL);
-    todo_wine
     ok(ret, "SetNamedPipeHandleState failed: %d\n", GetLastError());
 
     CloseHandle(client);
