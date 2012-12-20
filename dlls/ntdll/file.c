@@ -621,6 +621,23 @@ NTSTATUS WINAPI NtReadFile(HANDLE hFile, HANDLE hEvent,
         goto done;
     }
 
+    if (type == FD_TYPE_PIPE && !length)
+    {
+        struct pollfd pfd;
+        pfd.fd = unix_handle;
+        pfd.events = POLLHUP;
+        pfd.revents = 0;
+
+        status = STATUS_SUCCESS;
+        if (poll(&pfd, 1, 0) > 0 && pfd.revents == POLLHUP)
+        { /* the other end has closed, but we only return an error if the pipe is also empty */
+            char check;
+            if (recv( unix_handle, &check, sizeof(check), MSG_PEEK | MSG_DONTWAIT ) != sizeof(check))
+                status = STATUS_PIPE_BROKEN;
+        }
+        goto done;
+    }
+
     for (;;)
     {
         if ((result = read( unix_handle, (char *)buffer + total, length - total )) >= 0)
