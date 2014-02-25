@@ -1123,8 +1123,8 @@ void context_invalidate_state(struct wined3d_context *context, DWORD state)
 }
 
 /* This function takes care of wined3d pixel format selection. */
-static int context_choose_pixel_format(const struct wined3d_device *device, HDC hdc,
-        const struct wined3d_format *color_format, const struct wined3d_format *ds_format,
+static int context_choose_pixel_format(const struct wined3d_device *device, const struct wined3d_swapchain *swapchain,
+        HDC hdc, const struct wined3d_format *color_format, const struct wined3d_format *ds_format,
         BOOL auxBuffers, BOOL findCompatible)
 {
     int iPixelFormat=0;
@@ -1132,6 +1132,7 @@ static int context_choose_pixel_format(const struct wined3d_device *device, HDC 
     BYTE depthBits=0, stencilBits=0;
     unsigned int current_value;
     unsigned int cfg_count = device->adapter->cfg_count;
+    BOOL double_buffer = TRUE;
     unsigned int i;
 
     TRACE("device %p, dc %p, color_format %s, ds_format %s, aux_buffers %#x, find_compatible %#x.\n",
@@ -1144,6 +1145,9 @@ static int context_choose_pixel_format(const struct wined3d_device *device, HDC 
                 debug_d3dformat(color_format->id), color_format->id);
         return 0;
     }
+
+    if (wined3d_settings.offscreen_rendering_mode == ORM_FBO && !swapchain->desc.backbuffer_count)
+        double_buffer = FALSE;
 
     getDepthStencilBits(ds_format, &depthBits, &stencilBits);
 
@@ -1158,7 +1162,7 @@ static int context_choose_pixel_format(const struct wined3d_device *device, HDC 
         if (cfg->iPixelType != WGL_TYPE_RGBA_ARB)
             continue;
         /* In window mode we need a window drawable format and double buffering. */
-        if (!(cfg->windowDrawable && cfg->doubleBuffer))
+        if (!cfg->windowDrawable || (double_buffer && !cfg->doubleBuffer))
             continue;
         if (cfg->redSize < redBits)
             continue;
@@ -1181,17 +1185,19 @@ static int context_choose_pixel_format(const struct wined3d_device *device, HDC 
          * depth it is no problem to emulate 16-bit using e.g. 24-bit, so accept that. */
         if (cfg->depthSize == depthBits)
             value += 1;
-        if (cfg->stencilSize == stencilBits)
+        if (!cfg->doubleBuffer == !double_buffer)
             value += 2;
-        if (cfg->alphaSize == alphaBits)
+        if (cfg->stencilSize == stencilBits)
             value += 4;
+        if (cfg->alphaSize == alphaBits)
+            value += 8;
         /* We like to have aux buffers in backbuffer mode */
         if (auxBuffers && cfg->auxBuffers)
-            value += 8;
+            value += 16;
         if (cfg->redSize == redBits
                 && cfg->greenSize == greenBits
                 && cfg->blueSize == blueBits)
-            value += 16;
+            value += 32;
 
         if (value > current_value)
         {
@@ -1212,7 +1218,9 @@ static int context_choose_pixel_format(const struct wined3d_device *device, HDC 
         ZeroMemory(&pfd, sizeof(pfd));
         pfd.nSize      = sizeof(pfd);
         pfd.nVersion   = 1;
-        pfd.dwFlags    = PFD_SUPPORT_OPENGL | PFD_DOUBLEBUFFER | PFD_DRAW_TO_WINDOW;/*PFD_GENERIC_ACCELERATED*/
+        pfd.dwFlags    = PFD_SUPPORT_OPENGL | PFD_DRAW_TO_WINDOW;/*PFD_GENERIC_ACCELERATED*/
+        if (double_buffer)
+            pfd.dwFlags |= PFD_DOUBLEBUFFER;
         pfd.iPixelType = PFD_TYPE_RGBA;
         pfd.cAlphaBits = alphaBits;
         pfd.cColorBits = colorBits;
@@ -1410,13 +1418,13 @@ struct wined3d_context *context_create(struct wined3d_swapchain *swapchain,
         color_format = wined3d_get_format(gl_info, WINED3DFMT_B8G8R8A8_UNORM);
 
     /* Try to find a pixel format which matches our requirements. */
-    pixel_format = context_choose_pixel_format(device, hdc, color_format, ds_format, auxBuffers, FALSE);
+    pixel_format = context_choose_pixel_format(device, swapchain, hdc, color_format, ds_format, auxBuffers, FALSE);
 
     /* Try to locate a compatible format if we weren't able to find anything. */
     if (!pixel_format)
     {
         TRACE("Trying to locate a compatible pixel format because an exact match failed.\n");
-        pixel_format = context_choose_pixel_format(device, hdc, color_format, ds_format, auxBuffers, TRUE);
+        pixel_format = context_choose_pixel_format(device, swapchain, hdc, color_format, ds_format, auxBuffers, TRUE);
     }
 
     /* If we still don't have a pixel format, something is very wrong as ChoosePixelFormat barely fails */
