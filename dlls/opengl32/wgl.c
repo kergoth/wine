@@ -1090,6 +1090,32 @@ BOOL WINAPI wglSetPixelFormatWINE( HDC hdc, int format )
 }
 
 /***********************************************************************
+ *		wglCreateFullscreenDCWINE
+ *
+ * Provided by the WGL_WINE_fullscreen_dc extension.
+ */
+HDC WINAPI wglCreateFullscreenDCWINE( GLstring device )
+{
+    const struct opengl_funcs *funcs = NtCurrentTeb()->glTable;
+
+    if (!funcs->ext.p_wglCreateFullscreenDCWINE) return 0;
+    return (HDC)funcs->ext.p_wglCreateFullscreenDCWINE( device );
+}
+
+/***********************************************************************
+ *		wglDeleteFullscreenDCWINE
+ *
+ * Provided by the WGL_WINE_fullscreen_dc extension.
+ */
+void WINAPI wglDeleteFullscreenDCWINE( HDC hdc )
+{
+    const struct opengl_funcs *funcs = get_dc_funcs( hdc );
+
+    if (funcs && funcs->ext.p_wglDeleteFullscreenDCWINE)
+        funcs->ext.p_wglDeleteFullscreenDCWINE( hdc );
+}
+
+/***********************************************************************
  *		wglUseFontBitmaps_common
  */
 static BOOL wglUseFontBitmaps_common( HDC hdc, DWORD first, DWORD count, DWORD listBase, BOOL unicode )

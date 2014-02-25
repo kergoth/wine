@@ -33,4 +33,7 @@ extern const int extension_registry_size;
 
 extern BOOL WINAPI wglSetPixelFormatWINE( HDC hdc, int format );
 
+extern HDC WINAPI wglCreateFullscreenDCWINE( GLstring device );
+extern void WINAPI wglDeleteFullscreenDCWINE( HDC hdc );
+
 #endif /* __DLLS_OPENGL32_OPENGL_EXT_H */

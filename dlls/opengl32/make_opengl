@@ -559,6 +559,8 @@ my %ext_functions  =
     "glDeleteObjectBufferATI" => [ "void", [ [ "GLuint", "buffer" ] ], [ "GL_ATI_vertex_array_object" ] ],
     "wglSetPixelFormatWINE" => [ "BOOL", [ [ "HDC", "hdc" ],
                                            [ "int", "format" ] ], [ "WGL_WINE_pixel_format_passthrough" ] ],
+    "wglCreateFullscreenDCWINE" => [ "HDC", [ [ "GLstring", "device" ] ], [ "WGL_WINE_fullscreen_dc" ] ],
+    "wglDeleteFullscreenDCWINE" => [ "void", [ [ "HDC", "hdc" ] ], [ "WGL_WINE_fullscreen_dc" ] ],
    );
 
 
@@ -596,6 +598,7 @@ my %supported_wgl_extensions =
     "WGL_EXT_extensions_string" => 1,
     "WGL_EXT_swap_control" => 1,
     "WGL_NV_vertex_array_range" => 1,
+    "WGL_WINE_fullscreen_dc" => 1,
     "WGL_WINE_pixel_format_passthrough" => 1,
    );
 

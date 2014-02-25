@@ -142,7 +142,7 @@ static void send_mouse_input(HWND hwnd, macdrv_window cocoa_window, UINT flags, 
     top_level_hwnd = GetAncestor(hwnd, GA_ROOT);
 
     if ((flags & MOUSEEVENTF_MOVE) && (flags & MOUSEEVENTF_ABSOLUTE) && !drag &&
-        cocoa_window != macdrv_thread_data()->capture_window)
+        top_level_hwnd && cocoa_window != macdrv_thread_data()->capture_window)
     {
         RECT rect;
 

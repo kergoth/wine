@@ -2704,7 +2704,9 @@ struct opengl_funcs
         BOOL       (WINE_GLAPI *p_wglBindTexImageARB)(struct wgl_pbuffer *,int);
         BOOL       (WINE_GLAPI *p_wglChoosePixelFormatARB)(HDC,const int*,const FLOAT*,UINT,int*,UINT*);
         struct wgl_context * (WINE_GLAPI *p_wglCreateContextAttribsARB)(HDC,struct wgl_context *,const int*);
+        HDC        (WINE_GLAPI *p_wglCreateFullscreenDCWINE)(GLstring);
         struct wgl_pbuffer * (WINE_GLAPI *p_wglCreatePbufferARB)(HDC,int,int,int,const int*);
+        void       (WINE_GLAPI *p_wglDeleteFullscreenDCWINE)(HDC);
         BOOL       (WINE_GLAPI *p_wglDestroyPbufferARB)(struct wgl_pbuffer *);
         void       (WINE_GLAPI *p_wglFreeMemoryNV)(void*);
         HDC        (WINE_GLAPI *p_wglGetCurrentReadDCARB)(void);

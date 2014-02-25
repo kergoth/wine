@@ -199,7 +199,14 @@ static inline NSUInteger adjusted_modifiers_for_option_behavior(NSUInteger modif
     - (BOOL) becameEligibleParentOrChild;
     - (void) becameIneligibleChild;
 
+    - (void) orderBelow:(WineWindow*)prev orAbove:(WineWindow*)next activate:(BOOL)activate;
+    - (void) doOrderOut;
+
 @end
+
+
+static WineWindow* desktopWindow;
+static WineContentView* desktopView;
 
 
 @implementation WineContentView
@@ -303,6 +310,9 @@ static inline NSUInteger adjusted_modifiers_for_option_behavior(NSUInteger modif
         if (!pendingGlContexts)
             pendingGlContexts = [[NSMutableArray alloc] init];
 
+        if (self == desktopView)
+            [desktopWindow orderBelow:nil orAbove:nil activate:FALSE];
+
         if ([[self window] windowNumber] > 0 && !NSIsEmptyRect([self visibleRect]))
         {
             [glContexts addObject:context];
@@ -327,6 +337,9 @@ static inline NSUInteger adjusted_modifiers_for_option_behavior(NSUInteger modif
         [glContexts removeObjectIdenticalTo:context];
         [pendingGlContexts removeObjectIdenticalTo:context];
         [(WineWindow*)[self window] updateColorSpace];
+
+        if (self == desktopView && ![glContexts count] && ![pendingGlContexts count])
+            [desktopWindow doOrderOut];
     }
 
     - (void) updateGLContexts
@@ -526,6 +539,8 @@ static inline NSUInteger adjusted_modifiers_for_option_behavior(NSUInteger modif
 @implementation WineWindow
 
     static WineWindow* causing_becomeKeyWindow;
+    static WineWindow* desktopWindow;
+    static WineContentView* desktopView;
 
     @synthesize disabled, noActivate, floating, fullscreen, fakingClose, latentParentWindow, hwnd, queue;
     @synthesize surface, surface_mutex;
@@ -1134,6 +1149,8 @@ static inline NSUInteger adjusted_modifiers_for_option_behavior(NSUInteger modif
             if ([self becameEligibleParentOrChild])
                 needAdjustWindowLevels = TRUE;
 
+            if (!prev && !next && [desktopWindow isVisible])
+                prev = desktopWindow;
             if (prev || next)
             {
                 WineWindow* other = [prev isVisible] ? prev : next;
@@ -2441,6 +2458,62 @@ macdrv_view macdrv_create_view(macdrv_window w, CGRect rect)
 
     [pool release];
     return (macdrv_view)view;
+}
+
+/***********************************************************************
+ *              macdrv_create_desktop_view
+ *
+ * Creates and returns a view for the desktop.  The
+ * caller is responsible for calling macdrv_dispose_view() on the view
+ * when it is done with it.
+ */
+macdrv_view macdrv_create_desktop_view(macdrv_event_queue q)
+{
+    NSAutoreleasePool* pool = [[NSAutoreleasePool alloc] init];
+    WineEventQueue* queue = (WineEventQueue*)q;
+
+    OnMainThread(^{
+        NSNotificationCenter* nc = [NSNotificationCenter defaultCenter];
+
+        if (!desktopWindow)
+        {
+            struct macdrv_window_features wf = { 0 };
+            struct macdrv_window_state state = { 0 };
+
+            desktopWindow = [[WineWindow createWindowWithFeatures:&wf
+                                                      windowFrame:[[[NSScreen screens] objectAtIndex:0] frame]
+                                                             hwnd:NULL
+                                                            queue:queue] retain];
+            [[desktopWindow contentView] setAutoresizesSubviews:YES];
+
+            state.floating = TRUE;
+            [desktopWindow setMacDrvState:&state];
+
+            [nc addObserverForName:NSApplicationDidChangeScreenParametersNotification
+                            object:NSApp
+                             queue:[NSOperationQueue mainQueue]
+                        usingBlock:^(NSNotification* note){
+                [desktopWindow setFrame:[[[NSScreen screens] objectAtIndex:0] frame] display:YES];
+            }];
+
+            desktopView = [[WineContentView alloc] initWithFrame:[[desktopWindow contentView] bounds]];
+            [desktopView setAutoresizesSubviews:NO];
+            [desktopView setAutoresizingMask:NSViewWidthSizable | NSViewHeightSizable];
+            [nc addObserver:desktopView
+                   selector:@selector(updateGLContexts)
+                       name:NSViewGlobalFrameDidChangeNotification
+                     object:desktopView];
+            [nc addObserver:desktopView
+                   selector:@selector(updateGLContexts)
+                       name:NSApplicationDidChangeScreenParametersNotification
+                     object:NSApp];
+            [[desktopWindow contentView] addSubview:desktopView];
+            [desktopWindow updateColorSpace];
+        }
+    });
+
+    [pool release];
+    return (macdrv_view)[desktopView retain];
 }
 
 /***********************************************************************

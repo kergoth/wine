@@ -214,6 +214,7 @@ static const struct wined3d_extension_map wgl_extension_map[] =
 {
     {"WGL_ARB_pixel_format",                WGL_ARB_PIXEL_FORMAT             },
     {"WGL_EXT_swap_control",                WGL_EXT_SWAP_CONTROL             },
+    {"WGL_WINE_fullscreen_dc",              WGL_WINE_FULLSCREEN_DC           },
     {"WGL_WINE_pixel_format_passthrough",   WGL_WINE_PIXEL_FORMAT_PASSTHROUGH},
 };
 

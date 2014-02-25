@@ -14,7 +14,7 @@
 
 WINE_DEFAULT_DEBUG_CHANNEL(opengl);
 
-const int extension_registry_size = 2351;
+const int extension_registry_size = 2353;
 
 static void WINAPI glAccumxOES( GLenum op, GLfixed value ) {
   const struct opengl_funcs *funcs = NtCurrentTeb()->glTable;
@@ -13996,7 +13996,7 @@ static void WINAPI glWriteMaskEXT( GLuint res, GLuint in, GLenum outX, GLenum ou
   funcs->ext.p_glWriteMaskEXT( res, in, outX, outY, outZ, outW );
 }
 
-const OpenGL_extension extension_registry[2351] = {
+const OpenGL_extension extension_registry[2353] = {
   { "glAccumxOES", "GL_OES_fixed_point", glAccumxOES },
   { "glActiveProgramEXT", "GL_EXT_separate_shader_objects", glActiveProgramEXT },
   { "glActiveShaderProgram", "GL_ARB_separate_shader_objects GL_VERSION_4_1", glActiveShaderProgram },
@@ -16331,7 +16331,9 @@ const OpenGL_extension extension_registry[2351] = {
   { "wglBindTexImageARB", "WGL_ARB_render_texture", wglBindTexImageARB },
   { "wglChoosePixelFormatARB", "WGL_ARB_pixel_format", wglChoosePixelFormatARB },
   { "wglCreateContextAttribsARB", "WGL_ARB_create_context", wglCreateContextAttribsARB },
+  { "wglCreateFullscreenDCWINE", "WGL_WINE_fullscreen_dc", wglCreateFullscreenDCWINE },
   { "wglCreatePbufferARB", "WGL_ARB_pbuffer", wglCreatePbufferARB },
+  { "wglDeleteFullscreenDCWINE", "WGL_WINE_fullscreen_dc", wglDeleteFullscreenDCWINE },
   { "wglDestroyPbufferARB", "WGL_ARB_pbuffer", wglDestroyPbufferARB },
   { "wglFreeMemoryNV", "WGL_NV_vertex_array_range", wglFreeMemoryNV },
   { "wglGetCurrentReadDCARB", "WGL_ARB_make_current_read", wglGetCurrentReadDCARB },

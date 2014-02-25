@@ -1104,6 +1104,7 @@ struct wined3d_context
     HGLRC                   glCtx;
     HWND                    win_handle;
     HDC                     hdc;
+    BOOL                    hdc_fullscreen;
     int pixel_format;
     GLint                   aux_buffers;
 

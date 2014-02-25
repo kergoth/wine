@@ -5705,7 +5705,9 @@ static void* null_wglAllocateMemoryNV( GLsizei size, GLfloat readfreq, GLfloat w
 static BOOL null_wglBindTexImageARB( struct wgl_pbuffer * hPbuffer, int iBuffer ) { return 0; }
 static BOOL null_wglChoosePixelFormatARB( HDC hdc, const int* piAttribIList, const FLOAT* pfAttribFList, UINT nMaxFormats, int* piFormats, UINT* nNumFormats ) { return 0; }
 static struct wgl_context * null_wglCreateContextAttribsARB( HDC hDC, struct wgl_context * hShareContext, const int* attribList ) { return 0; }
+static HDC null_wglCreateFullscreenDCWINE( GLstring device ) { return 0; }
 static struct wgl_pbuffer * null_wglCreatePbufferARB( HDC hDC, int iPixelFormat, int iWidth, int iHeight, const int* piAttribList ) { return 0; }
+static void null_wglDeleteFullscreenDCWINE( HDC hdc ) { }
 static BOOL null_wglDestroyPbufferARB( struct wgl_pbuffer * hPbuffer ) { return 0; }
 static void null_wglFreeMemoryNV( void* pointer ) { }
 static HDC null_wglGetCurrentReadDCARB( void ) { return 0; }
@@ -8410,7 +8412,9 @@ struct opengl_funcs null_opengl_funcs =
         null_wglBindTexImageARB,
         null_wglChoosePixelFormatARB,
         null_wglCreateContextAttribsARB,
+        null_wglCreateFullscreenDCWINE,
         null_wglCreatePbufferARB,
+        null_wglDeleteFullscreenDCWINE,
         null_wglDestroyPbufferARB,
         null_wglFreeMemoryNV,
         null_wglGetCurrentReadDCARB,

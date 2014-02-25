@@ -839,6 +839,8 @@ static void context_restore_gl_context(const struct wined3d_gl_info *gl_info, HD
 
 static void context_update_window(struct wined3d_context *context)
 {
+    const struct wined3d_gl_info *gl_info = context->gl_info;
+
     if (context->win_handle == context->swapchain->win_handle)
         return;
 
@@ -846,13 +848,25 @@ static void context_update_window(struct wined3d_context *context)
             context, context->win_handle, context->swapchain->win_handle);
 
     if (context->valid)
-        wined3d_release_dc(context->win_handle, context->hdc);
+    {
+        if (context->hdc_fullscreen)
+            GL_EXTCALL(wglDeleteFullscreenDCWINE(context->hdc));
+        else
+            wined3d_release_dc(context->win_handle, context->hdc);
+    }
     else
         context->valid = 1;
 
     context->win_handle = context->swapchain->win_handle;
+    context->hdc_fullscreen = FALSE;
 
-    if (!(context->hdc = GetDC(context->win_handle)))
+    if (!context->swapchain->desc.windowed && gl_info->supported[WGL_WINE_FULLSCREEN_DC] &&
+        (context->hdc = GL_EXTCALL(wglCreateFullscreenDCWINE(NULL))))
+    {
+        TRACE("created fullscreen DC %p for context %p\n", context->hdc, context);
+        context->hdc_fullscreen = TRUE;
+    }
+    else if (!(context->hdc = GetDC(context->win_handle)))
     {
         ERR("Failed to get a device context for window %p.\n", context->win_handle);
         goto err;
@@ -973,7 +987,10 @@ static void context_destroy_gl_resources(struct wined3d_context *context)
         ERR("Failed to disable GL context.\n");
     }
 
-    wined3d_release_dc(context->win_handle, context->hdc);
+    if (context->hdc_fullscreen)
+        GL_EXTCALL(wglDeleteFullscreenDCWINE(context->hdc));
+    else
+        wined3d_release_dc(context->win_handle, context->hdc);
 
     if (!wglDeleteContext(context->glCtx))
     {
@@ -1295,6 +1312,7 @@ struct wined3d_context *context_create(struct wined3d_swapchain *swapchain,
     int swap_interval;
     DWORD state;
     HDC hdc;
+    BOOL hdc_fullscreen = FALSE;
 
     TRACE("swapchain %p, target %p, window %p.\n", swapchain, target, swapchain->win_handle);
 
@@ -1351,7 +1369,13 @@ struct wined3d_context *context_create(struct wined3d_swapchain *swapchain,
         }
     }
 
-    if (!(hdc = GetDC(swapchain->win_handle)))
+    if (!swapchain->desc.windowed && gl_info->supported[WGL_WINE_FULLSCREEN_DC] &&
+        (hdc = GL_EXTCALL(wglCreateFullscreenDCWINE(NULL))))
+    {
+        TRACE("created fullscreen DC %p for context %p\n", hdc, ret);
+        hdc_fullscreen = TRUE;
+    }
+    else if (!(hdc = GetDC(swapchain->win_handle)))
     {
         WARN("Failed to retireve device context, trying swapchain backup.\n");
 
@@ -1482,6 +1506,7 @@ struct wined3d_context *context_create(struct wined3d_swapchain *swapchain,
     ret->glCtx = ctx;
     ret->win_handle = swapchain->win_handle;
     ret->hdc = hdc;
+    ret->hdc_fullscreen = hdc_fullscreen;
     ret->pixel_format = pixel_format;
 
     /* Set up the context defaults */

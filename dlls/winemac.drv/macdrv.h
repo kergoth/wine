@@ -77,6 +77,15 @@ extern const char* debugstr_cf(CFTypeRef t) DECLSPEC_HIDDEN;
  * Mac GDI driver
  */
 
+/* GDI escapes */
+#define MACDRV_ESCAPE 0x9a472
+enum macdrv_escape_code
+{
+    MACDRV_SET_FULLSCREEN_DC,   /* mark a DC for full-screen OpenGL */
+    MACDRV_QUERY_FULLSCREEN_DC, /* is a DC for full-screen OpenGL? */
+};
+
+
 extern CGRect macdrv_get_desktop_rect(void) DECLSPEC_HIDDEN;
 extern void macdrv_reset_device_metrics(void) DECLSPEC_HIDDEN;
 extern BOOL macdrv_GetDeviceGammaRamp(PHYSDEV dev, LPVOID ramp) DECLSPEC_HIDDEN;

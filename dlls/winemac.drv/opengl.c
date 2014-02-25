@@ -99,6 +99,10 @@ static const char *opengl_func_names[] = { ALL_WGL_FUNCS };
 #undef USE_GL_FUNC
 
 
+static int fullscreen_pixel_format;
+static macdrv_view fullscreen_gl_view;
+
+
 static void (*pglCopyColorTable)(GLenum target, GLenum internalformat, GLint x, GLint y,
                                  GLsizei width);
 static void (*pglCopyPixels)(GLint x, GLint y, GLsizei width, GLsizei height, GLenum type);
@@ -1325,6 +1329,24 @@ static BOOL set_win_format(struct macdrv_win_data *data, int format)
 
 
 /**********************************************************************
+ *              is_fullscreen_dc
+ */
+static BOOL is_fullscreen_dc(HDC hdc)
+{
+    enum macdrv_escape_code escape = MACDRV_QUERY_FULLSCREEN_DC;
+    BOOL ret;
+
+    if (ExtEscape(hdc, MACDRV_ESCAPE, sizeof(escape), (LPSTR)&escape, sizeof(ret), (LPSTR)&ret) <= 0)
+    {
+        WARN("ExtEscape(MACDRV_ESCAPE/MACDRV_SET_FULLSCREEN_DC) failed\n");
+        ret = FALSE;
+    }
+
+    return ret;
+}
+
+
+/**********************************************************************
  *              set_pixel_format
  *
  * Implementation of wglSetPixelFormat and wglSetPixelFormatWINE.
@@ -1333,47 +1355,78 @@ static BOOL set_pixel_format(HDC hdc, int fmt, BOOL allow_reset)
 {
     struct macdrv_win_data *data;
     const pixel_format *pf;
-    HWND hwnd = WindowFromDC(hdc);
+    HWND hwnd = NULL;
     BOOL ret = FALSE;
 
     TRACE("hdc %p format %d\n", hdc, fmt);
 
-    if (!hwnd || hwnd == GetDesktopWindow())
+    if (is_fullscreen_dc(hdc))
     {
-        WARN("not a proper window DC %p/%p\n", hdc, hwnd);
-        return FALSE;
-    }
+        data = NULL;
 
-    if (!(data = get_win_data(hwnd)))
-    {
-        FIXME("DC for window %p of other process: not implemented\n", hwnd);
-        return FALSE;
-    }
+        /* Check if fmt is in our list of supported formats to see if it is supported. */
+        pf = get_pixel_format(fmt, FALSE /* non-displayable */);
+        if (!pf)
+        {
+            ERR("Invalid pixel format: %d\n", fmt);
+            goto done;
+        }
 
-    if (!allow_reset && data->pixel_format)  /* cannot change it if already set */
-    {
-        ret = (data->pixel_format == fmt);
-        goto done;
-    }
+        if (!pf->window)
+        {
+            WARN("Pixel format %d is not compatible for window rendering\n", fmt);
+            goto done;
+        }
 
-    /* Check if fmt is in our list of supported formats to see if it is supported. */
-    pf = get_pixel_format(fmt, FALSE /* non-displayable */);
-    if (!pf)
-    {
-        ERR("Invalid pixel format: %d\n", fmt);
-        goto done;
+        if (!fullscreen_gl_view)
+        {
+            struct macdrv_thread_data *thread_data = macdrv_init_thread_data();
+            fullscreen_gl_view = macdrv_create_desktop_view(thread_data->queue);
+            TRACE("created GL view %p for full-screen\n", fullscreen_gl_view);
+        }
+        fullscreen_pixel_format = fmt;
     }
-
-    if (!pf->window)
+    else
     {
-        WARN("Pixel format %d is not compatible for window rendering\n", fmt);
-        goto done;
-    }
+        hwnd = WindowFromDC(hdc);
 
-    if (!set_win_format(data, fmt))
-    {
-        WARN("Couldn't set format of the window, returning failure\n");
-        goto done;
+        if (!hwnd || hwnd == GetDesktopWindow())
+        {
+            WARN("not a proper window DC %p/%p\n", hdc, hwnd);
+            return FALSE;
+        }
+
+        if (!(data = get_win_data(hwnd)))
+        {
+            FIXME("DC for window %p of other process: not implemented\n", hwnd);
+            return FALSE;
+        }
+
+        if (!allow_reset && data->pixel_format)  /* cannot change it if already set */
+        {
+            ret = (data->pixel_format == fmt);
+            goto done;
+        }
+
+        /* Check if fmt is in our list of supported formats to see if it is supported. */
+        pf = get_pixel_format(fmt, FALSE /* non-displayable */);
+        if (!pf)
+        {
+            ERR("Invalid pixel format: %d\n", fmt);
+            goto done;
+        }
+
+        if (!pf->window)
+        {
+            WARN("Pixel format %d is not compatible for window rendering\n", fmt);
+            goto done;
+        }
+
+        if (!set_win_format(data, fmt))
+        {
+            WARN("Couldn't set format of the window, returning failure\n");
+            goto done;
+        }
     }
 
     TRACE("pixel format:\n");
@@ -1395,7 +1448,7 @@ static BOOL set_pixel_format(HDC hdc, int fmt, BOOL allow_reset)
 
 done:
     release_win_data(data);
-    if (ret) __wine_set_pixel_format(hwnd, fmt);
+    if (ret && hwnd) __wine_set_pixel_format(hwnd, fmt);
     return ret;
 }
 
@@ -1989,6 +2042,38 @@ cant_match:
 
 
 /**********************************************************************
+ *              macdrv_wglCreateFullscreenDCWINE
+ *
+ * WGL_WINE_fullscreen_dc: wglCreateFullscreenDCWINE
+ */
+static HDC macdrv_wglCreateFullscreenDCWINE(GLstring device)
+{
+    HDC hdc;
+    enum macdrv_escape_code escape;
+
+    TRACE("device %s\n", debugstr_a((char*)device));
+
+    hdc = CreateDCA("display", (char*)device, NULL, NULL);
+    if (!hdc)
+    {
+        WARN("CreateDCA() failed\n");
+        return NULL;
+    }
+
+    escape = MACDRV_SET_FULLSCREEN_DC;
+    if (ExtEscape(hdc, MACDRV_ESCAPE, sizeof(escape), (LPSTR)&escape, 0, NULL) <= 0)
+    {
+        WARN("ExtEscape(MACDRV_ESCAPE/MACDRV_SET_FULLSCREEN_DC) failed\n");
+        DeleteDC(hdc);
+        return NULL;
+    }
+
+    TRACE(" -> %p\n", hdc);
+    return hdc;
+}
+
+
+/**********************************************************************
  *              macdrv_wglCreatePbufferARB
  *
  * WGL_ARB_pbuffer: wglCreatePbufferARB
@@ -2128,6 +2213,18 @@ done:
 
     TRACE(" -> %p\n", pbuffer);
     return pbuffer;
+}
+
+
+/**********************************************************************
+ *              macdrv_wglDeleteFullscreenDCWINE
+ *
+ * WGL_WINE_fullscreen_dc: wglDeleteFullscreenDCWINE
+ */
+static void macdrv_wglDeleteFullscreenDCWINE(HDC hdc)
+{
+    TRACE("hdc %p\n", hdc);
+    DeleteDC(hdc);
 }
 
 
@@ -2584,7 +2681,25 @@ static BOOL macdrv_wglMakeContextCurrentARB(HDC draw_hdc, HDC read_hdc, struct w
         return TRUE;
     }
 
-    if ((hwnd = WindowFromDC(draw_hdc)))
+    if (is_fullscreen_dc(draw_hdc))
+    {
+        if (!fullscreen_pixel_format)
+        {
+            WARN("no pixel format set\n");
+            SetLastError(ERROR_INVALID_HANDLE);
+            return FALSE;
+        }
+        if (context->format != fullscreen_pixel_format)
+        {
+            WARN("mismatched pixel format draw_hdc %p %u context %p %u\n", draw_hdc, fullscreen_pixel_format, context, context->format);
+            SetLastError(ERROR_INVALID_PIXEL_FORMAT);
+            return FALSE;
+        }
+
+        context->draw_view = fullscreen_gl_view;
+        context->draw_pbuffer = NULL;
+    }
+    else if ((hwnd = WindowFromDC(draw_hdc)))
     {
         if (!(data = get_win_data(hwnd)))
         {
@@ -2644,7 +2759,12 @@ static BOOL macdrv_wglMakeContextCurrentARB(HDC draw_hdc, HDC read_hdc, struct w
     context->read_pbuffer = NULL;
     if (read_hdc && read_hdc != draw_hdc)
     {
-        if ((hwnd = WindowFromDC(read_hdc)))
+        if (is_fullscreen_dc(read_hdc))
+        {
+            if (fullscreen_gl_view != context->draw_view)
+                context->read_view = fullscreen_gl_view;
+        }
+        else if ((hwnd = WindowFromDC(read_hdc)))
         {
             if ((data = get_win_data(hwnd)))
             {
@@ -3048,6 +3168,10 @@ static void load_extensions(void)
      */
     register_extension("WGL_WINE_pixel_format_passthrough");
     opengl_funcs.ext.p_wglSetPixelFormatWINE = macdrv_wglSetPixelFormatWINE;
+
+    register_extension("WGL_WINE_fullscreen_dc");
+    opengl_funcs.ext.p_wglCreateFullscreenDCWINE = macdrv_wglCreateFullscreenDCWINE;
+    opengl_funcs.ext.p_wglDeleteFullscreenDCWINE = macdrv_wglDeleteFullscreenDCWINE;
 }
 
 
@@ -3150,7 +3274,9 @@ static int get_dc_pixel_format(HDC hdc)
     int format;
     HWND hwnd;
 
-    if ((hwnd = WindowFromDC(hdc)))
+    if (is_fullscreen_dc(hdc))
+        format = fullscreen_pixel_format;
+    else if ((hwnd = WindowFromDC(hdc)))
     {
         struct macdrv_win_data *data;
 

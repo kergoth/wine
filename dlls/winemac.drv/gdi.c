@@ -30,6 +30,7 @@ WINE_DEFAULT_DEBUG_CHANNEL(macdrv);
 typedef struct
 {
     struct gdi_physdev  dev;
+    BOOL                fullscreen;
 } MACDRV_PDEVICE;
 
 static inline MACDRV_PDEVICE *get_macdrv_dev(PHYSDEV dev)
@@ -261,6 +262,46 @@ static BOOL macdrv_DeleteDC(PHYSDEV dev)
 }
 
 
+/**********************************************************************
+ *           ExtEscape  (MACDRV.@)
+ */
+static INT macdrv_ExtEscape(PHYSDEV dev, INT escape, INT in_count, LPCVOID in_data,
+                            INT out_count, LPVOID out_data)
+{
+    INT ret = 0;
+    MACDRV_PDEVICE *physDev = get_macdrv_dev(dev);
+
+    TRACE("dev %p physDev %p escape %d in_count %d in_data %p out_count %d out_data %p\n",
+           dev, physDev, escape, in_count, in_data, out_count, out_data);
+
+    if (escape == QUERYESCSUPPORT)
+        ret = in_data && in_count >= sizeof(DWORD) && *(const DWORD*)in_data == MACDRV_ESCAPE;
+
+    if (escape == MACDRV_ESCAPE && in_data && in_count >= sizeof(enum macdrv_escape_code))
+    {
+        switch (*(const enum macdrv_escape_code*)in_data)
+        {
+            case MACDRV_SET_FULLSCREEN_DC:
+                TRACE("MACDRV_SET_FULLSCREEN_DC: hdc %p\n", dev->hdc);
+                physDev->fullscreen = TRUE;
+                ret = TRUE;
+                break;
+            case MACDRV_QUERY_FULLSCREEN_DC:
+                if (out_count >= sizeof(BOOL))
+                {
+                    TRACE("MACDRV_QUERY_FULLSCREEN_DC: hdc %p fullscreen %d\n", dev->hdc, physDev->fullscreen);
+                    *(BOOL*)out_data = physDev->fullscreen;
+                    ret = TRUE;
+                }
+                break;
+        }
+    }
+
+    TRACE(" -> %d\n", ret);
+    return ret;
+}
+
+
 /***********************************************************************
  *              GetDeviceCaps (MACDRV.@)
  */
@@ -434,7 +475,7 @@ static const struct gdi_dc_funcs macdrv_funcs =
     NULL,                                   /* pEnumICMProfiles */
     NULL,                                   /* pExcludeClipRect */
     NULL,                                   /* pExtDeviceMode */
-    NULL,                                   /* pExtEscape */
+    macdrv_ExtEscape,                       /* pExtEscape */
     NULL,                                   /* pExtFloodFill */
     NULL,                                   /* pExtSelectClipRgn */
     NULL,                                   /* pExtTextOut */

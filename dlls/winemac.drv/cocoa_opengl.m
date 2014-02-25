@@ -123,10 +123,15 @@ void macdrv_dispose_opengl_context(macdrv_opengl_context c)
     WineOpenGLContext *context = (WineOpenGLContext*)c;
 
     if ([context view])
+    {
         macdrv_remove_view_opengl_context((macdrv_view)[context view], c);
+        [context clearDrawableLeavingSurfaceOnScreen];
+    }
     if ([context latentView])
+    {
         macdrv_remove_view_opengl_context((macdrv_view)[context latentView], c);
-    [context clearDrawableLeavingSurfaceOnScreen];
+        [context setLatentView:nil];
+    }
     [context release];
 
     [pool release];
@@ -143,12 +148,23 @@ void macdrv_make_context_current(macdrv_opengl_context c, macdrv_view v)
 
     if (context)
     {
-        if ([context view])
-            macdrv_remove_view_opengl_context((macdrv_view)[context view], c);
-        if ([context latentView])
-            macdrv_remove_view_opengl_context((macdrv_view)[context latentView], c);
-        context.needsUpdate = FALSE;
-        if (view)
+        if (!view || ([context view] != view && [context latentView] != view))
+        {
+            if ([context view])
+                macdrv_remove_view_opengl_context((macdrv_view)[context view], c);
+            if ([context latentView])
+                macdrv_remove_view_opengl_context((macdrv_view)[context latentView], c);
+            context.needsUpdate = FALSE;
+        }
+
+        if (!view)
+        {
+            [WineOpenGLContext clearCurrentContext];
+            if ([context view])
+                [context clearDrawableLeavingSurfaceOnScreen];
+            [context setLatentView:nil];
+        }
+        else if ([context view] != view && [context latentView] != view)
         {
             macdrv_add_view_opengl_context(v, c);
 
@@ -159,17 +175,16 @@ void macdrv_make_context_current(macdrv_opengl_context c, macdrv_view v)
                 [context setLatentView:nil];
             }
             else
+            {
+                if ([context view])
+                    [context clearDrawableLeavingSurfaceOnScreen];
                 [context setLatentView:view];
+            }
 
             [context makeCurrentContext];
 
             if ([context view])
                 [context clearToBlackIfNeeded];
-        }
-        else
-        {
-            [WineOpenGLContext clearCurrentContext];
-            [context clearDrawableLeavingSurfaceOnScreen];
         }
     }
     else
