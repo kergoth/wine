@@ -353,6 +353,7 @@ static char *running_from_build_dir( const char *basedir )
     const char *p;
     char *path;
 
+    return NULL;
     /* remove last component from basedir */
     p = basedir + strlen(basedir) - 1;
     while (p > basedir && *p == '/') p--;
