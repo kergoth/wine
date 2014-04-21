@@ -783,4 +783,4 @@
 # or 'wine_' (for user-visible functions) to avoid namespace conflicts.
 #
 @ cdecl __wine_send_input(long ptr)
-@ cdecl __wine_set_pixel_format(long long)
+@ cdecl __wine_track_gl_surfaces(long long)

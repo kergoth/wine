@@ -745,30 +745,39 @@ void CDECL wined3d_device_setup_fullscreen_window(struct wined3d_device *device,
 {
     BOOL filter_messages;
     LONG style, exstyle;
+    UINT swp_flags;
 
     TRACE("Setting up window %p for fullscreen mode.\n", window);
 
-    if (device->style || device->exStyle)
+    if (!device->adapter->gl_info.supported[WGL_WINE_SURFACE])
     {
-        ERR("Changing the window style for window %p, but another style (%08x, %08x) is already stored.\n",
-                window, device->style, device->exStyle);
+        if (device->style || device->exStyle)
+        {
+            ERR("Changing the window style for window %p, but another style (%08x, %08x) is already stored.\n",
+                    window, device->style, device->exStyle);
+        }
+
+        device->style = GetWindowLongW(window, GWL_STYLE);
+        device->exStyle = GetWindowLongW(window, GWL_EXSTYLE);
+
+        style = fullscreen_style(device->style);
+        exstyle = fullscreen_exstyle(device->exStyle);
+
+        TRACE("Old style was %08x, %08x, setting to %08x, %08x.\n",
+                device->style, device->exStyle, style, exstyle);
     }
-
-    device->style = GetWindowLongW(window, GWL_STYLE);
-    device->exStyle = GetWindowLongW(window, GWL_EXSTYLE);
-
-    style = fullscreen_style(device->style);
-    exstyle = fullscreen_exstyle(device->exStyle);
-
-    TRACE("Old style was %08x, %08x, setting to %08x, %08x.\n",
-            device->style, device->exStyle, style, exstyle);
 
     filter_messages = device->filter_messages;
     device->filter_messages = TRUE;
 
-    SetWindowLongW(window, GWL_STYLE, style);
-    SetWindowLongW(window, GWL_EXSTYLE, exstyle);
-    SetWindowPos(window, HWND_TOPMOST, 0, 0, w, h, SWP_FRAMECHANGED | SWP_SHOWWINDOW | SWP_NOACTIVATE);
+    swp_flags = 0;
+    if (!device->adapter->gl_info.supported[WGL_WINE_SURFACE])
+    {
+        SetWindowLongW(window, GWL_STYLE, style);
+        SetWindowLongW(window, GWL_EXSTYLE, exstyle);
+        swp_flags = SWP_FRAMECHANGED;
+    }
+    SetWindowPos(window, HWND_TOPMOST, 0, 0, w, h, swp_flags | SWP_SHOWWINDOW | SWP_NOACTIVATE);
 
     device->filter_messages = filter_messages;
 }
@@ -4388,7 +4397,12 @@ HRESULT CDECL wined3d_device_reset(struct wined3d_device *device,
             wined3d_device_restore_fullscreen_window(device, swapchain->device_window);
             wined3d_device_release_focus_window(device);
         }
-        swapchain->desc.windowed = swapchain_desc->windowed;
+
+        if (!swapchain_desc->windowed != !swapchain->desc.windowed)
+        {
+            swapchain->desc.windowed = swapchain_desc->windowed;
+            swapchain_update_surface(swapchain);
+        }
     }
     else if (!swapchain_desc->windowed)
     {

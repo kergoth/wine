@@ -1119,6 +1119,7 @@ struct wined3d_context
     HWND restore_pf_win;
     HGLRC                   glCtx;
     HWND                    win_handle;
+    HANDLE                  surface;
     HDC                     hdc;
     int pixel_format;
     GLint                   aux_buffers;
@@ -2293,7 +2294,7 @@ void surface_set_compatible_renderbuffer(struct wined3d_surface *surface,
 void surface_set_container(struct wined3d_surface *surface, struct wined3d_texture *container) DECLSPEC_HIDDEN;
 void surface_set_swapchain(struct wined3d_surface *surface, struct wined3d_swapchain *swapchain) DECLSPEC_HIDDEN;
 void surface_set_texture_target(struct wined3d_surface *surface, GLenum target, GLint level) DECLSPEC_HIDDEN;
-void surface_translate_drawable_coords(const struct wined3d_surface *surface, HWND window, RECT *rect) DECLSPEC_HIDDEN;
+void surface_translate_drawable_coords(const struct wined3d_surface *surface, const struct wined3d_context *context, RECT *rect) DECLSPEC_HIDDEN;
 void surface_update_draw_binding(struct wined3d_surface *surface) DECLSPEC_HIDDEN;
 HRESULT surface_upload_from_surface(struct wined3d_surface *dst_surface, const POINT *dst_point,
         struct wined3d_surface *src_surface, const RECT *src_rect) DECLSPEC_HIDDEN;
@@ -2629,6 +2630,7 @@ struct wined3d_swapchain
 
     HWND win_handle;
     HWND device_window;
+    HANDLE surface;
 
     HDC backup_dc;
     HWND backup_wnd;
@@ -2646,6 +2648,7 @@ void swapchain_destroy_contexts(struct wined3d_swapchain *swapchain) DECLSPEC_HI
 HDC swapchain_get_backup_dc(struct wined3d_swapchain *swapchain) DECLSPEC_HIDDEN;
 void swapchain_update_draw_bindings(struct wined3d_swapchain *swapchain) DECLSPEC_HIDDEN;
 void swapchain_update_render_to_fbo(struct wined3d_swapchain *swapchain) DECLSPEC_HIDDEN;
+void swapchain_update_surface(struct wined3d_swapchain *swapchain) DECLSPEC_HIDDEN;
 
 /*****************************************************************************
  * Utility function prototypes

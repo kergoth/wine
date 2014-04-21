@@ -2082,7 +2082,7 @@ BOOL set_window_pos( HWND hwnd, HWND insert_after, UINT swp_flags,
                 wine_server_add_data( req, valid_rects, 2 * sizeof(*valid_rects) );
         }
         if (new_surface) req->paint_flags |= SET_WINPOS_PAINT_SURFACE;
-        if (win->pixel_format) req->paint_flags |= SET_WINPOS_PIXEL_FORMAT;
+        if (win->gl_surfaces) req->paint_flags |= SET_WINPOS_PIXEL_FORMAT;
 
         if ((ret = !wine_server_call( req )))
         {

@@ -139,6 +139,8 @@ my %debug_conv =
      "HGLRC" => "%p",
      "HPBUFFERARB" => "%p",
      "HPBUFFEREXT" => "%p",
+     "HSURFACEWINE" => "%p",
+     "HWND" => "%p",
     );
 
 #
@@ -196,6 +198,7 @@ sub ConvertType($)
               "GLDEBUGPROCKHR" => "void *",
               "HPBUFFERARB" => "struct wgl_pbuffer *",
               "HPBUFFEREXT" => "struct wgl_pbuffer *",
+              "HSURFACEWINE" => "struct wgl_surface *",
         );
 
     foreach my $org (reverse sort keys %hash) {
@@ -559,6 +562,12 @@ my %ext_functions  =
     "glDeleteObjectBufferATI" => [ "void", [ [ "GLuint", "buffer" ] ], [ "GL_ATI_vertex_array_object" ] ],
     "wglSetPixelFormatWINE" => [ "BOOL", [ [ "HDC", "hdc" ],
                                            [ "int", "format" ] ], [ "WGL_WINE_pixel_format_passthrough" ] ],
+    "wglCreateSurfaceWINE" => [ "HSURFACEWINE", [ [ "HDC", "hdc" ],
+                                                  [ "HWND", "proxy_window" ] ], [ "WGL_WINE_surface" ] ],
+    "wglDestroySurfaceWINE" => [ "BOOL", [ [ "HSURFACEWINE", "surface" ] ], [ "WGL_WINE_surface" ] ],
+    "wglGetSurfaceDCWINE" => [ "HDC", [ [ "HSURFACEWINE", "surface" ] ], [ "WGL_WINE_surface" ] ],
+    "wglReleaseSurfaceDCWINE" => [ "BOOL", [ [ "HSURFACEWINE", "surface" ],
+                                             [ "HDC", "hdc" ] ], [ "WGL_WINE_surface" ] ],
    );
 
 
@@ -597,6 +606,7 @@ my %supported_wgl_extensions =
     "WGL_EXT_swap_control" => 1,
     "WGL_NV_vertex_array_range" => 1,
     "WGL_WINE_pixel_format_passthrough" => 1,
+    "WGL_WINE_surface" => 1,
    );
 
 my %enums = ();
@@ -745,7 +755,8 @@ print HEADER "#endif\n\n";
 printf HEADER "#define WINE_WGL_DRIVER_VERSION %u\n\n", $wgl_version + 1;
 
 print HEADER "struct wgl_context;\n";
-print HEADER "struct wgl_pbuffer;\n\n";
+print HEADER "struct wgl_pbuffer;\n";
+print HEADER "struct wgl_surface;\n\n";
 
 print HEADER "struct opengl_funcs\n{\n";
 print HEADER "    struct\n    {\n";
@@ -780,7 +791,7 @@ foreach (sort keys %norm_functions)
 print HEADER "\n\n";
 
 print HEADER "extern struct opengl_funcs * CDECL __wine_get_wgl_driver( HDC hdc, UINT version );\n";
-print HEADER "extern BOOL CDECL __wine_set_pixel_format( HWND hwnd, int format );\n\n";
+print HEADER "extern BOOL CDECL __wine_track_gl_surfaces( HWND hwnd, int change );\n\n";
 print HEADER "#endif /* __WINE_WGL_DRIVER_H */\n";
 close HEADER;
 

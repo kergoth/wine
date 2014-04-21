@@ -7654,7 +7654,7 @@ HRESULT arbfp_blit_surface(struct wined3d_device *device, DWORD filter,
     context_apply_blit_state(context, device);
 
     if (!surface_is_offscreen(dst_surface))
-        surface_translate_drawable_coords(dst_surface, context->win_handle, &dst_rect);
+        surface_translate_drawable_coords(dst_surface, context, &dst_rect);
 
     arbfp_blit_set(device->blit_priv, context, src_surface);
 

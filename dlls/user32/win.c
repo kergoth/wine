@@ -3619,18 +3619,18 @@ BOOL WINAPI SwitchDesktop( HDESK hDesktop)
 
 
 /***********************************************************************
- *           __wine_set_pixel_format
+ *           __wine_track_gl_surfaces
  */
-BOOL CDECL __wine_set_pixel_format( HWND hwnd, int format )
+BOOL CDECL __wine_track_gl_surfaces( HWND hwnd, int change )
 {
     WND *win = WIN_GetPtr( hwnd );
 
     if (!win || win == WND_DESKTOP || win == WND_OTHER_PROCESS)
     {
-        WARN( "setting format %d on win %p not supported\n", format, hwnd );
+        WARN( "tracking GL surfaces on win %p not supported\n", hwnd );
         return FALSE;
     }
-    win->pixel_format = format;
+    win->gl_surfaces += change;
     WIN_ReleasePtr( win );
 
     update_window_state( hwnd );

@@ -53,6 +53,7 @@ enum wgl_handle_type
 {
     HANDLE_CONTEXT = 0 << 12,
     HANDLE_PBUFFER = 1 << 12,
+    HANDLE_SURFACE = 2 << 12,
     HANDLE_TYPE_MASK = 15 << 12
 };
 
@@ -73,6 +74,7 @@ struct wgl_handle
     {
         struct opengl_context *context;  /* for HANDLE_CONTEXT */
         struct wgl_pbuffer    *pbuffer;  /* for HANDLE_PBUFFER */
+        struct wgl_surface    *surface;  /* for HANDLE_SURFACE */
         struct wgl_handle     *next;     /* for free handles */
     } u;
 };
@@ -1087,6 +1089,71 @@ BOOL WINAPI wglSetPixelFormatWINE( HDC hdc, int format )
 
     if (!funcs || !funcs->ext.p_wglSetPixelFormatWINE) return FALSE;
     return funcs->ext.p_wglSetPixelFormatWINE( hdc, format );
+}
+
+/***********************************************************************
+ *		wglCreateSurfaceWINE
+ *
+ * Provided by the WGL_WINE_surface extension.
+ */
+HSURFACEWINE WINAPI wglCreateSurfaceWINE( HDC hdc, HWND proxy_window )
+{
+    HSURFACEWINE ret = 0;
+    struct wgl_surface *surface;
+    struct opengl_funcs *funcs = get_dc_funcs( hdc );
+
+    if (!funcs || !funcs->ext.p_wglCreateSurfaceWINE) return 0;
+    if (!(surface = funcs->ext.p_wglCreateSurfaceWINE( hdc, proxy_window ))) return 0;
+    ret = alloc_handle( HANDLE_SURFACE, funcs, surface );
+    if (!ret) funcs->ext.p_wglDestroySurfaceWINE( surface );
+    return ret;
+}
+
+/***********************************************************************
+ *		wglGetSurfaceDCWINE
+ *
+ * Provided by the WGL_WINE_surface extension.
+ */
+HDC WINAPI wglGetSurfaceDCWINE( HSURFACEWINE surface )
+{
+    struct wgl_handle *ptr = get_handle_ptr( surface, HANDLE_SURFACE );
+    HDC ret;
+
+    if (!ptr) return 0;
+    ret = ptr->funcs->ext.p_wglGetSurfaceDCWINE( ptr->u.surface );
+    release_handle_ptr( ptr );
+    return ret;
+}
+
+/***********************************************************************
+ *		wglReleaseSurfaceDCWINE
+ *
+ * Provided by the WGL_WINE_surface extension.
+ */
+BOOL WINAPI wglReleaseSurfaceDCWINE( HSURFACEWINE surface, HDC hdc )
+{
+    struct wgl_handle *ptr = get_handle_ptr( surface, HANDLE_SURFACE );
+    BOOL ret;
+
+    if (!ptr) return FALSE;
+    ret = ptr->funcs->ext.p_wglReleaseSurfaceDCWINE( ptr->u.surface, hdc );
+    release_handle_ptr( ptr );
+    return ret;
+}
+
+/***********************************************************************
+ *		wglDestroySurfaceWINE
+ *
+ * Provided by the WGL_WINE_surface extension.
+ */
+BOOL WINAPI wglDestroySurfaceWINE( HSURFACEWINE surface )
+{
+    struct wgl_handle *ptr = get_handle_ptr( surface, HANDLE_SURFACE );
+
+    if (!ptr) return FALSE;
+    ptr->funcs->ext.p_wglDestroySurfaceWINE( ptr->u.surface );
+    free_handle_ptr( ptr );
+    return TRUE;
 }
 
 /***********************************************************************

@@ -490,22 +490,26 @@ LRESULT clip_cursor_notify( HWND hwnd, HWND new_clip_hwnd )
  */
 BOOL clip_fullscreen_window( HWND hwnd, BOOL reset )
 {
-    struct x11drv_win_data *data;
     struct x11drv_thread_data *thread_data;
     RECT rect;
-    DWORD style;
-    BOOL fullscreen;
 
-    if (hwnd == GetDesktopWindow()) return FALSE;
-    style = GetWindowLongW( hwnd, GWL_STYLE );
-    if (!(style & WS_VISIBLE)) return FALSE;
-    if ((style & (WS_POPUP | WS_CHILD)) == WS_CHILD) return FALSE;
-    /* maximized windows don't count as full screen */
-    if ((style & WS_MAXIMIZE) && (style & WS_CAPTION) == WS_CAPTION) return FALSE;
-    if (!(data = get_win_data( hwnd ))) return FALSE;
-    fullscreen = is_window_rect_fullscreen( &data->whole_rect );
-    release_win_data( data );
-    if (!fullscreen) return FALSE;
+    if (hwnd)
+    {
+        struct x11drv_win_data *data;
+        DWORD style;
+        BOOL fullscreen;
+
+        if (hwnd == GetDesktopWindow()) return FALSE;
+        style = GetWindowLongW( hwnd, GWL_STYLE );
+        if (!(style & WS_VISIBLE)) return FALSE;
+        if ((style & (WS_POPUP | WS_CHILD)) == WS_CHILD) return FALSE;
+        /* maximized windows don't count as full screen */
+        if ((style & WS_MAXIMIZE) && (style & WS_CAPTION) == WS_CAPTION) return FALSE;
+        if (!(data = get_win_data( hwnd ))) return FALSE;
+        fullscreen = is_window_rect_fullscreen( &data->whole_rect );
+        release_win_data( data );
+        if (!fullscreen) return FALSE;
+    }
     if (!(thread_data = x11drv_thread_data())) return FALSE;
     if (GetTickCount() - thread_data->clip_reset < 1000) return FALSE;
     if (!reset && clipping_cursor && thread_data->clip_hwnd) return FALSE;  /* already clipping */
@@ -518,6 +522,19 @@ BOOL clip_fullscreen_window( HWND hwnd, BOOL reset )
     }
     TRACE( "win %p clipping fullscreen\n", hwnd );
     return grab_clipping_window( &rect );
+}
+
+/***********************************************************************
+ *		set_cursor_window
+ */
+static void set_cursor_window( HWND hwnd, Window window, Time time )
+{
+    if (InterlockedExchangePointer( (void **)&cursor_window, hwnd ) != hwnd ||
+        time - last_cursor_change > 100)
+    {
+        sync_window_cursor( window );
+        last_cursor_change = time;
+    }
 }
 
 /***********************************************************************
@@ -534,19 +551,29 @@ static void send_mouse_input( HWND hwnd, Window window, unsigned int state, INPU
 
     if (!hwnd)
     {
-        struct x11drv_thread_data *thread_data = x11drv_thread_data();
-        HWND clip_hwnd = thread_data->clip_hwnd;
-
-        if (!clip_hwnd) return;
-        if (thread_data->clip_window != window) return;
-        if (InterlockedExchangePointer( (void **)&cursor_window, clip_hwnd ) != clip_hwnd ||
-            input->u.mi.time - last_cursor_change > 100)
+        if (is_gl_fullscreen_window( window ))
         {
-            sync_window_cursor( window );
-            last_cursor_change = input->u.mi.time;
+            set_cursor_window( gl_fullscreen_cursor_window( window ), window, input->u.mi.time );
+
+            if (input->u.mi.dwFlags & (MOUSEEVENTF_LEFTDOWN | MOUSEEVENTF_RIGHTDOWN))
+                clip_fullscreen_window( NULL, FALSE );
+
+            pt = root_to_virtual_screen( input->u.mi.dx, input->u.mi.dy );
+            input->u.mi.dx = pt.x;
+            input->u.mi.dy = pt.y;
         }
-        input->u.mi.dx += clip_rect.left;
-        input->u.mi.dy += clip_rect.top;
+        else
+        {
+            struct x11drv_thread_data *thread_data = x11drv_thread_data();
+            HWND clip_hwnd = thread_data->clip_hwnd;
+
+            if (!clip_hwnd) return;
+            if (thread_data->clip_window != window) return;
+            set_cursor_window( clip_hwnd, window, input->u.mi.time );
+            input->u.mi.dx += clip_rect.left;
+            input->u.mi.dy += clip_rect.top;
+        }
+
         __wine_send_input( hwnd, input );
         return;
     }
@@ -570,12 +597,7 @@ static void send_mouse_input( HWND hwnd, Window window, unsigned int state, INPU
         pt.x = data->client_rect.right - data->client_rect.left - 1 - pt.x;
     MapWindowPoints( hwnd, 0, &pt, 1 );
 
-    if (InterlockedExchangePointer( (void **)&cursor_window, hwnd ) != hwnd ||
-        input->u.mi.time - last_cursor_change > 100)
-    {
-        sync_window_cursor( data->whole_window );
-        last_cursor_change = input->u.mi.time;
-    }
+    set_cursor_window( hwnd, data->whole_window, input->u.mi.time );
     release_win_data( data );
 
     if (hwnd != GetDesktopWindow())
@@ -1313,6 +1335,50 @@ static Cursor create_cursor( HANDLE handle )
     return cursor;
 }
 
+/* Verify that the layout of XMotionEvent and XCrossingEvent structs are the
+   same as XButtonEvent for the fields we're interested in. */
+C_ASSERT(FIELD_OFFSET(XMotionEvent, display)    == FIELD_OFFSET(XButtonEvent, display));
+C_ASSERT(FIELD_OFFSET(XMotionEvent, window)     == FIELD_OFFSET(XButtonEvent, window));
+C_ASSERT(FIELD_OFFSET(XMotionEvent, time)       == FIELD_OFFSET(XButtonEvent, time));
+C_ASSERT(FIELD_OFFSET(XMotionEvent, x)          == FIELD_OFFSET(XButtonEvent, x));
+C_ASSERT(FIELD_OFFSET(XMotionEvent, y)          == FIELD_OFFSET(XButtonEvent, y));
+C_ASSERT(FIELD_OFFSET(XMotionEvent, x_root)     == FIELD_OFFSET(XButtonEvent, x_root));
+C_ASSERT(FIELD_OFFSET(XMotionEvent, y_root)     == FIELD_OFFSET(XButtonEvent, y_root));
+C_ASSERT(FIELD_OFFSET(XCrossingEvent, display)  == FIELD_OFFSET(XButtonEvent, display));
+C_ASSERT(FIELD_OFFSET(XCrossingEvent, window)   == FIELD_OFFSET(XButtonEvent, window));
+C_ASSERT(FIELD_OFFSET(XCrossingEvent, time)     == FIELD_OFFSET(XButtonEvent, time));
+C_ASSERT(FIELD_OFFSET(XCrossingEvent, x)        == FIELD_OFFSET(XButtonEvent, x));
+C_ASSERT(FIELD_OFFSET(XCrossingEvent, y)        == FIELD_OFFSET(XButtonEvent, y));
+C_ASSERT(FIELD_OFFSET(XCrossingEvent, x_root)   == FIELD_OFFSET(XButtonEvent, x_root));
+C_ASSERT(FIELD_OFFSET(XCrossingEvent, y_root)   == FIELD_OFFSET(XButtonEvent, y_root));
+
+static void fill_input( HWND hwnd, XButtonEvent *event, INPUT *input )
+{
+    if (hwnd || !is_gl_fullscreen_window( event->window ))
+    {
+        input->u.mi.dx = event->x;
+        input->u.mi.dy = event->y;
+    }
+    else if (root_window == DefaultRootWindow( event->display ))
+    {
+        input->u.mi.dx = event->x_root;
+        input->u.mi.dy = event->y_root;
+    }
+    else
+    {
+        int x, y;
+        Window child;
+
+        XTranslateCoordinates( event->display, event->window, root_window,
+                               event->x, event->y, &x, &y, &child );
+        input->u.mi.dx = x;
+        input->u.mi.dy = y;
+    }
+
+    input->u.mi.time        = EVENT_x11_time_to_win32_time( event->time );
+    input->u.mi.dwExtraInfo = 0;
+}
+
 /***********************************************************************
  *		DestroyCursorIcon (X11DRV.@)
  */
@@ -1522,12 +1588,9 @@ void X11DRV_ButtonPress( HWND hwnd, XEvent *xev )
 
     TRACE( "hwnd %p/%lx button %u pos %d,%d\n", hwnd, event->window, buttonNum, event->x, event->y );
 
-    input.u.mi.dx          = event->x;
-    input.u.mi.dy          = event->y;
+    fill_input( hwnd, event, &input );
     input.u.mi.mouseData   = button_down_data[buttonNum];
     input.u.mi.dwFlags     = button_down_flags[buttonNum] | MOUSEEVENTF_ABSOLUTE | MOUSEEVENTF_MOVE;
-    input.u.mi.time        = EVENT_x11_time_to_win32_time( event->time );
-    input.u.mi.dwExtraInfo = 0;
 
     update_user_time( event->time );
     send_mouse_input( hwnd, event->window, event->state, &input );
@@ -1547,12 +1610,9 @@ void X11DRV_ButtonRelease( HWND hwnd, XEvent *xev )
 
     TRACE( "hwnd %p/%lx button %u pos %d,%d\n", hwnd, event->window, buttonNum, event->x, event->y );
 
-    input.u.mi.dx          = event->x;
-    input.u.mi.dy          = event->y;
+    fill_input( hwnd, event, &input );
     input.u.mi.mouseData   = button_up_data[buttonNum];
     input.u.mi.dwFlags     = button_up_flags[buttonNum] | MOUSEEVENTF_ABSOLUTE | MOUSEEVENTF_MOVE;
-    input.u.mi.time        = EVENT_x11_time_to_win32_time( event->time );
-    input.u.mi.dwExtraInfo = 0;
 
     send_mouse_input( hwnd, event->window, event->state, &input );
 }
@@ -1569,14 +1629,11 @@ void X11DRV_MotionNotify( HWND hwnd, XEvent *xev )
     TRACE( "hwnd %p/%lx pos %d,%d is_hint %d serial %lu\n",
            hwnd, event->window, event->x, event->y, event->is_hint, event->serial );
 
-    input.u.mi.dx          = event->x;
-    input.u.mi.dy          = event->y;
+    fill_input( hwnd, (XButtonEvent*)event, &input );
     input.u.mi.mouseData   = 0;
     input.u.mi.dwFlags     = MOUSEEVENTF_MOVE | MOUSEEVENTF_ABSOLUTE;
-    input.u.mi.time        = EVENT_x11_time_to_win32_time( event->time );
-    input.u.mi.dwExtraInfo = 0;
 
-    if (!hwnd)
+    if (!hwnd && !is_gl_fullscreen_window( event->window ))
     {
         struct x11drv_thread_data *thread_data = x11drv_thread_data();
         if (thread_data->warp_serial && (long)(event->serial - thread_data->warp_serial) < 0) return;
@@ -1600,12 +1657,9 @@ void X11DRV_EnterNotify( HWND hwnd, XEvent *xev )
     if (event->window == x11drv_thread_data()->grab_window) return;
 
     /* simulate a mouse motion event */
-    input.u.mi.dx          = event->x;
-    input.u.mi.dy          = event->y;
+    fill_input( hwnd, (XButtonEvent*)event, &input );
     input.u.mi.mouseData   = 0;
     input.u.mi.dwFlags     = MOUSEEVENTF_MOVE | MOUSEEVENTF_ABSOLUTE;
-    input.u.mi.time        = EVENT_x11_time_to_win32_time( event->time );
-    input.u.mi.dwExtraInfo = 0;
 
     send_mouse_input( hwnd, event->window, event->state, &input );
 }

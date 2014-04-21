@@ -514,6 +514,8 @@ extern Bool (*pXGetEventData)( Display *display, XEvent /*XGenericEventCookie*/ 
 extern void (*pXFreeEventData)( Display *display, XEvent /*XGenericEventCookie*/ *event ) DECLSPEC_HIDDEN;
 
 extern DWORD EVENT_x11_time_to_win32_time(Time time) DECLSPEC_HIDDEN;
+extern void focus_out( Display *display , HWND hwnd ) DECLSPEC_HIDDEN;
+extern void handle_wm_protocols( HWND hwnd, XClientMessageEvent *event ) DECLSPEC_HIDDEN;
 
 /* X11 driver private messages, must be in the range 0x80001000..0x80001fff */
 enum x11drv_window_messages
@@ -536,6 +538,13 @@ enum x11drv_net_wm_state
     NB_NET_WM_STATES
 };
 
+struct x11drv_client_window
+{
+    struct list entry;
+    Window      window;
+    Colormap    colormap;
+};
+
 /* x11drv private window data */
 struct x11drv_win_data
 {
@@ -544,7 +553,7 @@ struct x11drv_win_data
     Colormap    colormap;       /* colormap if non-default visual */
     HWND        hwnd;           /* hwnd that this private data belongs to */
     Window      whole_window;   /* X window for the complete window */
-    Window      client_window;  /* X window for the client area */
+    struct list client_windows; /* X windows for the client area */
     RECT        window_rect;    /* USER window rectangle relative to parent */
     RECT        whole_rect;     /* X window rectangle for the whole window relative to parent */
     RECT        client_rect;    /* client area relative to parent */
@@ -574,6 +583,11 @@ extern XIC X11DRV_get_ic( HWND hwnd ) DECLSPEC_HIDDEN;
 extern void sync_gl_drawable( HWND hwnd, const RECT *visible_rect, const RECT *client_rect ) DECLSPEC_HIDDEN;
 extern void set_gl_drawable_parent( HWND hwnd, HWND parent ) DECLSPEC_HIDDEN;
 extern void destroy_gl_drawable( HWND hwnd ) DECLSPEC_HIDDEN;
+extern BOOL gl_handle_event( Display *display, XEvent *xev ) DECLSPEC_HIDDEN;
+extern BOOL is_gl_fullscreen_window( Window window ) DECLSPEC_HIDDEN;
+extern BOOL gl_has_fullscreen_windows(void) DECLSPEC_HIDDEN;
+extern HWND gl_fullscreen_cursor_window(Window window) DECLSPEC_HIDDEN;
+extern Window gl_fullscreen_for_cursor_window(HWND hwnd) DECLSPEC_HIDDEN;
 
 extern void wait_for_withdrawn_state( HWND hwnd, BOOL set ) DECLSPEC_HIDDEN;
 extern Window init_clip_window(void) DECLSPEC_HIDDEN;
@@ -581,10 +595,13 @@ extern void update_user_time( Time time ) DECLSPEC_HIDDEN;
 extern void update_net_wm_states( struct x11drv_win_data *data ) DECLSPEC_HIDDEN;
 extern void make_window_embedded( struct x11drv_win_data *data ) DECLSPEC_HIDDEN;
 extern Window create_client_window( struct x11drv_win_data *data, const XVisualInfo *visual ) DECLSPEC_HIDDEN;
+extern void destroy_client_window( struct x11drv_win_data *data, Window window ) DECLSPEC_HIDDEN;
 extern void set_window_visual( struct x11drv_win_data *data, const XVisualInfo *vis ) DECLSPEC_HIDDEN;
 extern void change_systray_owner( Display *display, Window systray_window ) DECLSPEC_HIDDEN;
 extern void update_systray_balloon_position(void) DECLSPEC_HIDDEN;
 extern HWND create_foreign_window( Display *display, Window window ) DECLSPEC_HIDDEN;
+extern BOOL can_activate_window( HWND hwnd ) DECLSPEC_HIDDEN;
+extern void set_initial_wm_hints( Display *display, Window window ) DECLSPEC_HIDDEN;
 
 static inline void mirror_rect( const RECT *window_rect, RECT *rect )
 {

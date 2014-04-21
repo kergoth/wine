@@ -29,6 +29,7 @@ WINE_DECLARE_DEBUG_CHANNEL(fps);
 
 static void swapchain_cleanup(struct wined3d_swapchain *swapchain)
 {
+    const struct wined3d_gl_info *gl_info = &swapchain->device->adapter->gl_info;
     HRESULT hr;
     UINT i;
 
@@ -65,6 +66,9 @@ static void swapchain_cleanup(struct wined3d_swapchain *swapchain)
         context_destroy(swapchain->device, swapchain->context[i]);
     }
     HeapFree(GetProcessHeap(), 0, swapchain->context);
+
+    if (swapchain->surface && !GL_EXTCALL(wglDestroySurfaceWINE(swapchain->surface)))
+        ERR("wglDestroySurfaceWINE failed to destroy surface %p\n", swapchain->surface);
 
     /* Restore the screen resolution if we rendered in fullscreen.
      * This will restore the screen resolution to what it was before creating
@@ -130,6 +134,9 @@ void CDECL wined3d_swapchain_set_window(struct wined3d_swapchain *swapchain, HWN
     TRACE("Setting swapchain %p window from %p to %p.\n",
             swapchain, swapchain->win_handle, window);
     swapchain->win_handle = window;
+
+    if (swapchain->desc.windowed)
+        swapchain_update_surface(swapchain);
 }
 
 HRESULT CDECL wined3d_swapchain_present(struct wined3d_swapchain *swapchain,
@@ -281,7 +288,6 @@ static void swapchain_blit(const struct wined3d_swapchain *swapchain,
     UINT src_h = src_rect->bottom - src_rect->top;
     GLenum gl_filter;
     const struct wined3d_gl_info *gl_info = context->gl_info;
-    RECT win_rect;
     UINT win_h;
 
     TRACE("swapchain %p, context %p, src_rect %s, dst_rect %s.\n",
@@ -292,8 +298,14 @@ static void swapchain_blit(const struct wined3d_swapchain *swapchain,
     else
         gl_filter = GL_LINEAR;
 
-    GetClientRect(swapchain->win_handle, &win_rect);
-    win_h = win_rect.bottom - win_rect.top;
+    if (context->surface && !swapchain->desc.windowed)
+        win_h = swapchain->front_buffer->resource.height;
+    else
+    {
+        RECT win_rect;
+        GetClientRect(swapchain->win_handle, &win_rect);
+        win_h = win_rect.bottom - win_rect.top;
+    }
 
     if (gl_info->fbo_ops.glBlitFramebuffer && is_identity_fixup(backbuffer->resource.format->color_fixup))
     {
@@ -483,6 +495,13 @@ static void swapchain_gl_present(struct wined3d_swapchain *swapchain, const RECT
 
     if (dst_rect_in)
         dst_rect = *dst_rect_in;
+    else if (context->surface && !swapchain->desc.windowed)
+    {
+        dst_rect.left = 0;
+        dst_rect.top = 0;
+        dst_rect.right = swapchain->front_buffer->resource.width;
+        dst_rect.bottom = swapchain->front_buffer->resource.height;
+    }
     else
         GetClientRect(swapchain->win_handle, &dst_rect);
 
@@ -730,7 +749,15 @@ void swapchain_update_render_to_fbo(struct wined3d_swapchain *swapchain)
         return;
     }
 
-    GetClientRect(swapchain->win_handle, &client_rect);
+    if (swapchain->surface && !swapchain->desc.windowed)
+    {
+        client_rect.left = 0;
+        client_rect.top = 0;
+        client_rect.right = swapchain->front_buffer->resource.width;
+        client_rect.bottom = swapchain->front_buffer->resource.height;
+    }
+    else
+        GetClientRect(swapchain->win_handle, &client_rect);
 
     TRACE("Backbuffer %ux%u, window %ux%u.\n",
             swapchain->desc.backbuffer_width,
@@ -757,6 +784,7 @@ static HRESULT swapchain_init(struct wined3d_swapchain *swapchain, struct wined3
         struct wined3d_swapchain_desc *desc, void *parent, const struct wined3d_parent_ops *parent_ops)
 {
     const struct wined3d_adapter *adapter = device->adapter;
+    const struct wined3d_gl_info *gl_info = &adapter->gl_info;
     struct wined3d_resource_desc surface_desc;
     BOOL displaymode_set = FALSE;
     RECT client_rect;
@@ -824,6 +852,7 @@ static HRESULT swapchain_init(struct wined3d_swapchain *swapchain, struct wined3
     }
     swapchain->desc = *desc;
     swapchain_update_render_to_fbo(swapchain);
+    swapchain_update_surface(swapchain);
 
     TRACE("Creating front buffer.\n");
 
@@ -885,8 +914,6 @@ static HRESULT swapchain_init(struct wined3d_swapchain *swapchain, struct wined3
             WINED3DFMT_D16_UNORM,
             WINED3DFMT_S1_UINT_D15_UNORM
         };
-
-        const struct wined3d_gl_info *gl_info = &adapter->gl_info;
 
         swapchain->context = HeapAlloc(GetProcessHeap(), 0, sizeof(*swapchain->context));
         if (!swapchain->context)
@@ -1020,6 +1047,9 @@ err:
         wined3d_surface_decref(swapchain->front_buffer);
     }
 
+    if (swapchain->surface && !GL_EXTCALL(wglDestroySurfaceWINE(swapchain->surface)))
+        ERR("wglDestroySurfaceWINE failed to destroy surface %p\n", swapchain->surface);
+
     return hr;
 }
 
@@ -1148,5 +1178,32 @@ void swapchain_update_draw_bindings(struct wined3d_swapchain *swapchain)
     for (i = 0; i < swapchain->desc.backbuffer_count; ++i)
     {
         surface_update_draw_binding(swapchain->back_buffers[i]);
+    }
+}
+
+void swapchain_update_surface(struct wined3d_swapchain *swapchain)
+{
+    const struct wined3d_gl_info *gl_info = &swapchain->device->adapter->gl_info;
+    if (gl_info->supported[WGL_WINE_SURFACE])
+    {
+        HDC hdc;
+
+        if (swapchain->surface && !GL_EXTCALL(wglDestroySurfaceWINE(swapchain->surface)))
+            ERR("wglDestroySurfaceWINE failed to destroy surface %p\n", swapchain->surface);
+
+        if (swapchain->desc.windowed)
+            hdc = GetDC(swapchain->win_handle);
+        else
+            hdc = CreateDCW(swapchain->device->adapter->DeviceName, swapchain->device->adapter->DeviceName, NULL, NULL);
+
+        swapchain->surface = GL_EXTCALL(wglCreateSurfaceWINE(hdc, swapchain->win_handle));
+        if (!swapchain->surface)
+            WARN("wglCreateSurfaceWINE failed to create surface for window %p\n",
+                 swapchain->desc.windowed ? swapchain->win_handle : NULL);
+
+        if (swapchain->desc.windowed)
+            ReleaseDC(swapchain->win_handle, hdc);
+        else
+            DeleteDC(hdc);
     }
 }

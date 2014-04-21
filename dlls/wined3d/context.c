@@ -934,24 +934,53 @@ static void context_restore_gl_context(const struct wined3d_gl_info *gl_info, HD
     }
 }
 
-static void context_update_window(struct wined3d_context *context)
+static void context_update_drawable(struct wined3d_context *context)
 {
-    if (context->win_handle == context->swapchain->win_handle)
+    const struct wined3d_gl_info *gl_info = context->gl_info;
+
+    if (context->win_handle == context->swapchain->win_handle
+            && context->surface == context->swapchain->surface)
         return;
 
-    TRACE("Updating context %p window from %p to %p.\n",
-            context, context->win_handle, context->swapchain->win_handle);
+    TRACE("Updating context %p window from %p to %p, surface from %p to %p.\n",
+            context, context->win_handle, context->swapchain->win_handle,
+            context->surface, context->swapchain->surface);
 
     if (context->hdc)
-        wined3d_release_dc(context->win_handle, context->hdc);
+    {
+        if (context->surface)
+        {
+            if (context->surface == context->swapchain->surface)
+            {
+                context->win_handle = context->swapchain->win_handle;
+                return;
+            }
+            else
+                GL_EXTCALL(wglReleaseSurfaceDCWINE(context->surface, context->hdc));
+        }
+        else
+            wined3d_release_dc(context->win_handle, context->hdc);
+    }
 
     context->win_handle = context->swapchain->win_handle;
+    context->surface = context->swapchain->surface;
+    context->hdc = NULL;
     context->hdc_is_private = FALSE;
     context->hdc_has_format = FALSE;
     context->needs_set = 1;
     context->valid = 1;
 
-    if (!(context->hdc = GetDC(context->win_handle)))
+    if (context->surface)
+    {
+        if ((context->hdc = GL_EXTCALL(wglGetSurfaceDCWINE(context->surface))))
+            context->hdc_is_private = TRUE;
+        else
+        {
+            WARN("Failed to get a device context for surface %p.\n", context->surface);
+            context->surface = NULL;
+        }
+    }
+    if (!context->hdc && !(context->hdc = GetDC(context->win_handle)))
     {
         ERR("Failed to get a device context for window %p.\n", context->win_handle);
         context->valid = 0;
@@ -1069,7 +1098,10 @@ static void context_destroy_gl_resources(struct wined3d_context *context)
         ERR("Failed to disable GL context.\n");
     }
 
-    wined3d_release_dc(context->win_handle, context->hdc);
+    if (context->surface)
+        GL_EXTCALL(wglReleaseSurfaceDCWINE(context->surface, context->hdc));
+    else
+        wined3d_release_dc(context->win_handle, context->hdc);
 
     if (!wglDeleteContext(context->glCtx))
     {
@@ -1398,10 +1430,10 @@ struct wined3d_context *context_create(struct wined3d_swapchain *swapchain,
     unsigned int s;
     int swap_interval;
     DWORD state;
-    HDC hdc;
+    HDC hdc = NULL;
     BOOL hdc_is_private = FALSE;
 
-    TRACE("swapchain %p, target %p, window %p.\n", swapchain, target, swapchain->win_handle);
+    TRACE("swapchain %p, target %p, window %p, surface %p.\n", swapchain, target, swapchain->win_handle, swapchain->surface);
 
     ret = HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, sizeof(*ret));
     if (!ret)
@@ -1463,7 +1495,17 @@ struct wined3d_context *context_create(struct wined3d_swapchain *swapchain,
         }
     }
 
-    if (!(hdc = GetDC(swapchain->win_handle)))
+    if (swapchain->surface)
+    {
+        if ((hdc = GL_EXTCALL(wglGetSurfaceDCWINE(swapchain->surface))))
+        {
+            ret->surface = swapchain->surface;
+            hdc_is_private = TRUE;
+        }
+        else
+            WARN("Failed to get device context for surface %p\n", swapchain->surface);
+    }
+    if (!hdc && !(hdc = GetDC(swapchain->win_handle)))
     {
         WARN("Failed to retireve device context, trying swapchain backup.\n");
 
@@ -1826,7 +1868,8 @@ static void context_get_rt_size(const struct wined3d_context *context, SIZE *siz
 {
     const struct wined3d_surface *rt = context->current_rt;
 
-    if (rt->swapchain && rt->swapchain->front_buffer == rt)
+    if (rt->swapchain && rt->swapchain->front_buffer == rt
+            && (!context->surface || context->swapchain->desc.windowed))
     {
         RECT window_size;
 
@@ -3120,7 +3163,7 @@ struct wined3d_context *context_acquire(const struct wined3d_device *device, str
     }
 
     context_enter(context);
-    context_update_window(context);
+    context_update_drawable(context);
     context_setup_target(context, target);
     if (!context->valid) return context;
 

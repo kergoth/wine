@@ -379,10 +379,17 @@ static inline void call_event_handler( Display *display, XEvent *event )
     XEvent *prev;
     struct x11drv_thread_data *thread_data;
 
+    thread_data = x11drv_thread_data();
+    prev = thread_data->current_event;
+    thread_data->current_event = event;
+
+    if (gl_handle_event( display, event ))
+        goto done;
+
     if (!handlers[event->type])
     {
         TRACE( "%s for win %lx, ignoring\n", dbgstr_event( event->type ), event->xany.window );
-        return;  /* no handler, ignore it */
+        goto done;  /* no handler, ignore it */
     }
 
     if (XFindContext( display, event->xany.window, winContext, (char **)&hwnd ) != 0)
@@ -391,10 +398,8 @@ static inline void call_event_handler( Display *display, XEvent *event )
 
     TRACE( "%lu %s for hwnd/window %p/%lx\n",
            event->xany.serial, dbgstr_event( event->type ), hwnd, event->xany.window );
-    thread_data = x11drv_thread_data();
-    prev = thread_data->current_event;
-    thread_data->current_event = event;
     handlers[event->type]( hwnd, event );
+done:
     thread_data->current_event = prev;
 }
 
@@ -539,7 +544,7 @@ DWORD EVENT_x11_time_to_win32_time(Time time)
  *
  * Check if we can activate the specified window.
  */
-static inline BOOL can_activate_window( HWND hwnd )
+BOOL can_activate_window( HWND hwnd )
 {
     LONG style = GetWindowLongW( hwnd, GWL_STYLE );
     RECT rect;
@@ -596,6 +601,8 @@ static void set_focus( Display *display, HWND hwnd, Time time )
     TRACE( "setting foreground window to %p\n", hwnd );
     SetForegroundWindow( hwnd );
 
+    if (gl_has_fullscreen_windows()) return;
+
     threadinfo.cbSize = sizeof(threadinfo);
     GetGUIThreadInfo(0, &threadinfo);
     focus = threadinfo.hwndFocus;
@@ -625,7 +632,7 @@ static void handle_manager_message( HWND hwnd, XClientMessageEvent *event )
 /**********************************************************************
  *              handle_wm_protocols
  */
-static void handle_wm_protocols( HWND hwnd, XClientMessageEvent *event )
+void handle_wm_protocols( HWND hwnd, XClientMessageEvent *event )
 {
     Atom protocol = (Atom)event->data.l[0];
     Time event_time = (Time)event->data.l[1];
@@ -781,7 +788,7 @@ static void X11DRV_FocusIn( HWND hwnd, XEvent *xev )
 /**********************************************************************
  *              focus_out
  */
- static void focus_out( Display *display , HWND hwnd )
+void focus_out( Display *display , HWND hwnd )
  {
     HWND hwnd_tmp;
     Window focus_win;
@@ -805,7 +812,7 @@ static void X11DRV_FocusIn( HWND hwnd, XEvent *xev )
        getting the focus is a Wine window */
 
     XGetInputFocus( display, &focus_win, &revert );
-    if (focus_win)
+    if (focus_win && !is_gl_fullscreen_window(focus_win))
     {
         if (XFindContext( display, focus_win, winContext, (char **)&hwnd_tmp ) != 0)
             focus_win = 0;
@@ -857,6 +864,8 @@ static void X11DRV_Expose( HWND hwnd, XEvent *xev )
     struct x11drv_win_data *data;
     HRGN surface_region = 0;
     UINT flags = RDW_INVALIDATE | RDW_ERASE | RDW_FRAME | RDW_ALLCHILDREN;
+    struct x11drv_client_window *client_window;
+    BOOL is_client_window = FALSE;
 
     TRACE( "win %p (%lx) %d,%d %dx%d\n",
            hwnd, event->window, event->x, event->y, event->width, event->height );
@@ -875,7 +884,15 @@ static void X11DRV_Expose( HWND hwnd, XEvent *xev )
     rect.right  = pos.x + event->width;
     rect.bottom = pos.y + event->height;
 
-    if (event->window != data->client_window)
+    LIST_FOR_EACH_ENTRY( client_window, &data->client_windows, struct x11drv_client_window, entry )
+    {
+        if (event->window == client_window->window)
+        {
+            is_client_window = TRUE;
+            break;
+        }
+    }
+    if (!is_client_window)
     {
         if (data->surface)
         {
@@ -928,6 +945,7 @@ static void X11DRV_MapNotify( HWND hwnd, XEvent *event )
         clipping_cursor = TRUE;
         return;
     }
+    if (gl_has_fullscreen_windows()) return;
     if (!(data = get_win_data( hwnd ))) return;
 
     if (!data->managed && !data->embedded && data->mapped)
@@ -1398,6 +1416,7 @@ void CDECL X11DRV_SetFocus( HWND hwnd )
 
     HWND parent;
 
+    if (gl_has_fullscreen_windows()) return;
     for (;;)
     {
         if (!(data = get_win_data( hwnd ))) return;

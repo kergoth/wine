@@ -132,6 +132,7 @@ struct macdrv_win_data
     RECT                client_rect;            /* client area relative to parent */
     int                 pixel_format;           /* pixel format for GL */
     macdrv_view         gl_view;                /* view for GL */
+    int                 gl_view_refs;           /* count of users (window and surfaces) of GL view */
     RECT                gl_rect;                /* GL view rectangle relative to whole_rect */
     COLORREF            color_key;              /* color key for layered window; CLR_INVALID is not color keyed */
     unsigned int        on_screen : 1;          /* is window ordered in? (minimized or not) */
