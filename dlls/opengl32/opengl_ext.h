@@ -33,4 +33,11 @@ extern const int extension_registry_size;
 
 extern BOOL WINAPI wglSetPixelFormatWINE( HDC hdc, int format );
 
+DECLARE_HANDLE(HSURFACEWINE);
+extern HSURFACEWINE WINAPI wglCreateSurfaceWINE( HDC hdc, HWND proxy_window );
+extern HDC WINAPI wglGetSurfaceDCWINE( HSURFACEWINE surface );
+extern BOOL WINAPI wglReleaseSurfaceDCWINE( HSURFACEWINE surface, HDC hdc );
+extern BOOL WINAPI wglDestroySurfaceWINE( HSURFACEWINE surface );
+
+
 #endif /* __DLLS_OPENGL32_OPENGL_EXT_H */

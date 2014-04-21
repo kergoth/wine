@@ -282,5 +282,6 @@ void X11DRV_resize_desktop( unsigned int width, unsigned int height )
                              MAKELPARAM( width, height ), SMTO_ABORTIFHUNG, 2000, NULL );
     }
 
+    sync_gl_fullscreen_to_desktop( width, height );
     EnumWindows( update_windows_on_desktop_resize, (LPARAM)&resize_data );
 }

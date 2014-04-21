@@ -75,6 +75,7 @@ BOOL grab_fullscreen = FALSE;
 BOOL managed_mode = TRUE;
 BOOL decorated_mode = TRUE;
 BOOL private_color_map = FALSE;
+BOOL fullscreen_bypass_compositor = TRUE;
 int primary_monitor = 0;
 BOOL client_side_graphics = TRUE;
 BOOL client_side_with_render = TRUE;
@@ -131,6 +132,7 @@ static const char * const atom_names[NB_XATOMS - FIRST_XATOM] =
     "_NET_SYSTEM_TRAY_OPCODE",
     "_NET_SYSTEM_TRAY_S0",
     "_NET_SYSTEM_TRAY_VISUAL",
+    "_NET_WM_BYPASS_COMPOSITOR",
     "_NET_WM_ICON",
     "_NET_WM_MOVERESIZE",
     "_NET_WM_NAME",
@@ -150,6 +152,7 @@ static const char * const atom_names[NB_XATOMS - FIRST_XATOM] =
     "_NET_WM_WINDOW_TYPE_DIALOG",
     "_NET_WM_WINDOW_TYPE_NORMAL",
     "_NET_WM_WINDOW_TYPE_UTILITY",
+    "_NET_ACTIVE_WINDOW",
     "_NET_WORKAREA",
     "_XEMBED",
     "_XEMBED_INFO",
@@ -411,6 +414,9 @@ static void setup_options(void)
         alloc_system_colors = atoi(buffer);
 
     get_config_key( hkey, appkey, "InputStyle", input_style, sizeof(input_style) );
+
+    if (!get_config_key( hkey, appkey, "FullscreenSurfacesBypassCompositor", buffer, sizeof(buffer) ))
+        fullscreen_bypass_compositor = IS_OPTION_TRUE( buffer[0] );
 
     if (appkey) RegCloseKey( appkey );
     if (hkey) RegCloseKey( hkey );

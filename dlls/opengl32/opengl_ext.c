@@ -14,7 +14,7 @@
 
 WINE_DEFAULT_DEBUG_CHANNEL(opengl);
 
-const int extension_registry_size = 2351;
+const int extension_registry_size = 2355;
 
 static void WINAPI glAccumxOES( GLenum op, GLfixed value ) {
   const struct opengl_funcs *funcs = NtCurrentTeb()->glTable;
@@ -13996,7 +13996,7 @@ static void WINAPI glWriteMaskEXT( GLuint res, GLuint in, GLenum outX, GLenum ou
   funcs->ext.p_glWriteMaskEXT( res, in, outX, outY, outZ, outW );
 }
 
-const OpenGL_extension extension_registry[2351] = {
+const OpenGL_extension extension_registry[2355] = {
   { "glAccumxOES", "GL_OES_fixed_point", glAccumxOES },
   { "glActiveProgramEXT", "GL_EXT_separate_shader_objects", glActiveProgramEXT },
   { "glActiveShaderProgram", "GL_ARB_separate_shader_objects GL_VERSION_4_1", glActiveShaderProgram },
@@ -16332,7 +16332,9 @@ const OpenGL_extension extension_registry[2351] = {
   { "wglChoosePixelFormatARB", "WGL_ARB_pixel_format", wglChoosePixelFormatARB },
   { "wglCreateContextAttribsARB", "WGL_ARB_create_context", wglCreateContextAttribsARB },
   { "wglCreatePbufferARB", "WGL_ARB_pbuffer", wglCreatePbufferARB },
+  { "wglCreateSurfaceWINE", "WGL_WINE_surface", wglCreateSurfaceWINE },
   { "wglDestroyPbufferARB", "WGL_ARB_pbuffer", wglDestroyPbufferARB },
+  { "wglDestroySurfaceWINE", "WGL_WINE_surface", wglDestroySurfaceWINE },
   { "wglFreeMemoryNV", "WGL_NV_vertex_array_range", wglFreeMemoryNV },
   { "wglGetCurrentReadDCARB", "WGL_ARB_make_current_read", wglGetCurrentReadDCARB },
   { "wglGetExtensionsStringARB", "WGL_ARB_extensions_string", wglGetExtensionsStringARB },
@@ -16340,10 +16342,12 @@ const OpenGL_extension extension_registry[2351] = {
   { "wglGetPbufferDCARB", "WGL_ARB_pbuffer", wglGetPbufferDCARB },
   { "wglGetPixelFormatAttribfvARB", "WGL_ARB_pixel_format", wglGetPixelFormatAttribfvARB },
   { "wglGetPixelFormatAttribivARB", "WGL_ARB_pixel_format", wglGetPixelFormatAttribivARB },
+  { "wglGetSurfaceDCWINE", "WGL_WINE_surface", wglGetSurfaceDCWINE },
   { "wglGetSwapIntervalEXT", "WGL_EXT_swap_control", wglGetSwapIntervalEXT },
   { "wglMakeContextCurrentARB", "WGL_ARB_make_current_read", wglMakeContextCurrentARB },
   { "wglQueryPbufferARB", "WGL_ARB_pbuffer", wglQueryPbufferARB },
   { "wglReleasePbufferDCARB", "WGL_ARB_pbuffer", wglReleasePbufferDCARB },
+  { "wglReleaseSurfaceDCWINE", "WGL_WINE_surface", wglReleaseSurfaceDCWINE },
   { "wglReleaseTexImageARB", "WGL_ARB_render_texture", wglReleaseTexImageARB },
   { "wglSetPbufferAttribARB", "WGL_ARB_render_texture", wglSetPbufferAttribARB },
   { "wglSetPixelFormatWINE", "WGL_WINE_pixel_format_passthrough", wglSetPixelFormatWINE },

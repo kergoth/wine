@@ -1337,6 +1337,7 @@ static void update_lock_state( HWND hwnd, WORD vkey, UINT state, DWORD time )
  */
 void X11DRV_KeyEvent( HWND hwnd, XEvent *xev )
 {
+    HWND ic_hwnd = hwnd;
     XKeyEvent *event = &xev->xkey;
     char buf[24];
     char *Str = buf;
@@ -1344,7 +1345,7 @@ void X11DRV_KeyEvent( HWND hwnd, XEvent *xev )
     WORD vkey = 0, bScan;
     DWORD dwFlags;
     int ascii_chars;
-    XIC xic = X11DRV_get_ic( hwnd );
+    XIC xic;
     DWORD event_time = EVENT_x11_time_to_win32_time(event->time);
     Status status = 0;
 
@@ -1354,6 +1355,14 @@ void X11DRV_KeyEvent( HWND hwnd, XEvent *xev )
     if (event->type == KeyPress) update_user_time( event->time );
 
     /* Clients should pass only KeyPress events to XmbLookupString */
+    if (!ic_hwnd && is_gl_fullscreen_window( event->window ))
+    {
+        ic_hwnd = GetFocus();
+        if (ic_hwnd) ic_hwnd = GetAncestor( ic_hwnd, GA_ROOT );
+        if (!ic_hwnd) ic_hwnd = GetActiveWindow();
+        if (!ic_hwnd) ic_hwnd = x11drv_thread_data()->last_focus;
+    }
+    xic = X11DRV_get_ic( ic_hwnd );
     if (xic && event->type == KeyPress)
     {
         ascii_chars = XmbLookupString(xic, event, buf, sizeof(buf), &keysym, &status);

@@ -7,10 +7,11 @@
 #define WINE_GLAPI
 #endif
 
-#define WINE_WGL_DRIVER_VERSION 11
+#define WINE_WGL_DRIVER_VERSION 12
 
 struct wgl_context;
 struct wgl_pbuffer;
+struct wgl_surface;
 
 struct opengl_funcs
 {
@@ -2705,7 +2706,9 @@ struct opengl_funcs
         BOOL       (WINE_GLAPI *p_wglChoosePixelFormatARB)(HDC,const int*,const FLOAT*,UINT,int*,UINT*);
         struct wgl_context * (WINE_GLAPI *p_wglCreateContextAttribsARB)(HDC,struct wgl_context *,const int*);
         struct wgl_pbuffer * (WINE_GLAPI *p_wglCreatePbufferARB)(HDC,int,int,int,const int*);
+        struct wgl_surface * (WINE_GLAPI *p_wglCreateSurfaceWINE)(HDC, HWND);
         BOOL       (WINE_GLAPI *p_wglDestroyPbufferARB)(struct wgl_pbuffer *);
+        BOOL       (WINE_GLAPI *p_wglDestroySurfaceWINE)(struct wgl_surface *);
         void       (WINE_GLAPI *p_wglFreeMemoryNV)(void*);
         HDC        (WINE_GLAPI *p_wglGetCurrentReadDCARB)(void);
         const char* (WINE_GLAPI *p_wglGetExtensionsStringARB)(HDC);
@@ -2713,10 +2716,12 @@ struct opengl_funcs
         HDC        (WINE_GLAPI *p_wglGetPbufferDCARB)(struct wgl_pbuffer *);
         BOOL       (WINE_GLAPI *p_wglGetPixelFormatAttribfvARB)(HDC,int,int,UINT,const int*,FLOAT*);
         BOOL       (WINE_GLAPI *p_wglGetPixelFormatAttribivARB)(HDC,int,int,UINT,const int*,int*);
+        HDC        (WINE_GLAPI *p_wglGetSurfaceDCWINE)(struct wgl_surface *);
         int        (WINE_GLAPI *p_wglGetSwapIntervalEXT)(void);
         BOOL       (WINE_GLAPI *p_wglMakeContextCurrentARB)(HDC,HDC,struct wgl_context *);
         BOOL       (WINE_GLAPI *p_wglQueryPbufferARB)(struct wgl_pbuffer *,int,int*);
         int        (WINE_GLAPI *p_wglReleasePbufferDCARB)(struct wgl_pbuffer *,HDC);
+        BOOL       (WINE_GLAPI *p_wglReleaseSurfaceDCWINE)(struct wgl_surface *,HDC);
         BOOL       (WINE_GLAPI *p_wglReleaseTexImageARB)(struct wgl_pbuffer *,int);
         BOOL       (WINE_GLAPI *p_wglSetPbufferAttribARB)(struct wgl_pbuffer *,const int*);
         BOOL       (WINE_GLAPI *p_wglSetPixelFormatWINE)(HDC,int);
@@ -3063,6 +3068,6 @@ struct opengl_funcs
     USE_GL_FUNC(glViewport)
 
 extern struct opengl_funcs * CDECL __wine_get_wgl_driver( HDC hdc, UINT version );
-extern BOOL CDECL __wine_set_pixel_format( HWND hwnd, int format );
+extern BOOL CDECL __wine_track_gl_surfaces( HWND hwnd, int change );
 
 #endif /* __WINE_WGL_DRIVER_H */

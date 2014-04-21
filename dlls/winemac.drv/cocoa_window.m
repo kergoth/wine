@@ -199,7 +199,14 @@ static inline NSUInteger adjusted_modifiers_for_option_behavior(NSUInteger modif
     - (BOOL) becameEligibleParentOrChild;
     - (void) becameIneligibleChild;
 
+    - (void) orderBelow:(WineWindow*)prev orAbove:(WineWindow*)next activate:(BOOL)activate;
+    - (void) doOrderOut;
+
 @end
+
+
+static WineWindow* fullscreenGLWindow;
+static WineContentView* fullscreenGLView;
 
 
 @implementation WineContentView
@@ -303,6 +310,9 @@ static inline NSUInteger adjusted_modifiers_for_option_behavior(NSUInteger modif
         if (!pendingGlContexts)
             pendingGlContexts = [[NSMutableArray alloc] init];
 
+        if (self == fullscreenGLView)
+            [fullscreenGLWindow orderBelow:nil orAbove:nil activate:FALSE];
+
         if ([[self window] windowNumber] > 0 && !NSIsEmptyRect([self visibleRect]))
         {
             [glContexts addObject:context];
@@ -327,6 +337,9 @@ static inline NSUInteger adjusted_modifiers_for_option_behavior(NSUInteger modif
         [glContexts removeObjectIdenticalTo:context];
         [pendingGlContexts removeObjectIdenticalTo:context];
         [(WineWindow*)[self window] updateColorSpace];
+
+        if (self == fullscreenGLView && ![glContexts count] && ![pendingGlContexts count])
+            [fullscreenGLWindow doOrderOut];
     }
 
     - (void) updateGLContexts
@@ -526,6 +539,8 @@ static inline NSUInteger adjusted_modifiers_for_option_behavior(NSUInteger modif
 @implementation WineWindow
 
     static WineWindow* causing_becomeKeyWindow;
+    static WineWindow* fullscreenGLWindow;
+    static WineContentView* fullscreenGLView;
 
     @synthesize disabled, noActivate, floating, fullscreen, fakingClose, latentParentWindow, hwnd, queue;
     @synthesize surface, surface_mutex;
@@ -1148,6 +1163,8 @@ static inline NSUInteger adjusted_modifiers_for_option_behavior(NSUInteger modif
             if ([self becameEligibleParentOrChild])
                 needAdjustWindowLevels = TRUE;
 
+            if (!prev && !next && [fullscreenGLWindow isVisible])
+                prev = fullscreenGLWindow;
             if (prev || next)
             {
                 WineWindow* other = [prev isVisible] ? prev : next;
@@ -2509,6 +2526,64 @@ macdrv_view macdrv_create_view(macdrv_window w, CGRect rect)
 
     [pool release];
     return (macdrv_view)view;
+}
+
+/***********************************************************************
+ *              macdrv_create_fullscreen_gl_view
+ *
+ * Creates and returns a view for full-screen GL on the primary display.
+ * The caller is responsible for calling macdrv_dispose_view() on the
+ * view when it is done with it.
+ */
+macdrv_view macdrv_create_fullscreen_gl_view(macdrv_event_queue q)
+{
+    NSAutoreleasePool* pool = [[NSAutoreleasePool alloc] init];
+    WineEventQueue* queue = (WineEventQueue*)q;
+
+    OnMainThread(^{
+        NSNotificationCenter* nc = [NSNotificationCenter defaultCenter];
+
+        if (fullscreenGLWindow)
+            fullscreenGLWindow.queue = queue;
+        else
+        {
+            struct macdrv_window_features wf = { 0 };
+            struct macdrv_window_state state = { 0 };
+
+            fullscreenGLWindow = [[WineWindow createWindowWithFeatures:&wf
+                                                           windowFrame:[[[NSScreen screens] objectAtIndex:0] frame]
+                                                                  hwnd:NULL
+                                                                 queue:queue] retain];
+            [[fullscreenGLWindow contentView] setAutoresizesSubviews:YES];
+
+            state.floating = TRUE;
+            [fullscreenGLWindow setMacDrvState:&state];
+
+            [nc addObserverForName:NSApplicationDidChangeScreenParametersNotification
+                            object:NSApp
+                             queue:[NSOperationQueue mainQueue]
+                        usingBlock:^(NSNotification* note){
+                [fullscreenGLWindow setFrame:[[[NSScreen screens] objectAtIndex:0] frame] display:YES];
+            }];
+
+            fullscreenGLView = [[WineContentView alloc] initWithFrame:[[fullscreenGLWindow contentView] bounds]];
+            [fullscreenGLView setAutoresizesSubviews:NO];
+            [fullscreenGLView setAutoresizingMask:NSViewWidthSizable | NSViewHeightSizable];
+            [nc addObserver:fullscreenGLView
+                   selector:@selector(updateGLContexts)
+                       name:NSViewGlobalFrameDidChangeNotification
+                     object:fullscreenGLView];
+            [nc addObserver:fullscreenGLView
+                   selector:@selector(updateGLContexts)
+                       name:NSApplicationDidChangeScreenParametersNotification
+                     object:NSApp];
+            [[fullscreenGLWindow contentView] addSubview:fullscreenGLView];
+            [fullscreenGLWindow updateColorSpace];
+        }
+    });
+
+    [pool release];
+    return (macdrv_view)[fullscreenGLView retain];
 }
 
 /***********************************************************************

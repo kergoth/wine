@@ -923,7 +923,7 @@ static void surface_blt_fbo(const struct wined3d_device *device, enum wined3d_te
     {
         TRACE("Source surface %p is onscreen.\n", src_surface);
         buffer = surface_get_gl_buffer(src_surface);
-        surface_translate_drawable_coords(src_surface, context->win_handle, &src_rect);
+        surface_translate_drawable_coords(src_surface, context, &src_rect);
     }
     else
     {
@@ -940,7 +940,7 @@ static void surface_blt_fbo(const struct wined3d_device *device, enum wined3d_te
     {
         TRACE("Destination surface %p is onscreen.\n", dst_surface);
         buffer = surface_get_gl_buffer(dst_surface);
-        surface_translate_drawable_coords(dst_surface, context->win_handle, &dst_rect);
+        surface_translate_drawable_coords(dst_surface, context, &dst_rect);
     }
     else
     {
@@ -3872,19 +3872,20 @@ static void fb_copy_to_texture_hwstretch(struct wined3d_surface *dst_surface, st
  * drawable is limited to the window's client area. The sysmem and texture
  * copies do have the full screen size. Note that GL has a bottom-left
  * origin, while D3D has a top-left origin. */
-void surface_translate_drawable_coords(const struct wined3d_surface *surface, HWND window, RECT *rect)
+void surface_translate_drawable_coords(const struct wined3d_surface *surface, const struct wined3d_context *context, RECT *rect)
 {
     UINT drawable_height;
 
-    if (surface->container->swapchain && surface->container == surface->container->swapchain->front_buffer)
+    if (surface->container->swapchain && surface->container == surface->container->swapchain->front_buffer
+            && (!context->surface || context->swapchain->desc.windowed))
     {
         POINT offset = {0, 0};
         RECT windowsize;
 
-        ScreenToClient(window, &offset);
+        ScreenToClient(context->win_handle, &offset);
         OffsetRect(rect, offset.x, offset.y);
 
-        GetClientRect(window, &windowsize);
+        GetClientRect(context->win_handle, &windowsize);
         drawable_height = windowsize.bottom - windowsize.top;
     }
     else
@@ -3920,7 +3921,7 @@ static void surface_blt_to_drawable(const struct wined3d_device *device,
     context_apply_blit_state(context, device);
 
     if (!wined3d_resource_is_offscreen(&dst_surface->resource))
-        surface_translate_drawable_coords(dst_surface, context->win_handle, &dst_rect);
+        surface_translate_drawable_coords(dst_surface, context, &dst_rect);
 
     device->blitter->set_shader(device->blit_priv, context, src_surface);
 

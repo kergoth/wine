@@ -2191,6 +2191,7 @@ DECL_HANDLER(set_window_pos)
     struct window *previous = NULL;
     struct window *top, *win = get_window( req->handle );
     unsigned int flags = req->swp_flags;
+    unsigned int old_pixel_format;
 
     if (!win) return;
     if (!win->parent) flags |= SWP_NOZORDER;  /* no Z order for the desktop */
@@ -2245,6 +2246,7 @@ DECL_HANDLER(set_window_pos)
         mirror_rect( &win->parent->client_rect, &client_rect );
     }
 
+    old_pixel_format = win->paint_flags & PAINT_HAS_PIXEL_FORMAT;
     win->paint_flags = (win->paint_flags & ~PAINT_CLIENT_FLAGS) | (req->paint_flags & PAINT_CLIENT_FLAGS);
     if (win->paint_flags & PAINT_HAS_PIXEL_FORMAT) update_pixel_format_flags( win );
 
@@ -2267,7 +2269,7 @@ DECL_HANDLER(set_window_pos)
     top = get_top_clipping_window( win );
     if (is_visible( top ) &&
         (top->paint_flags & PAINT_HAS_SURFACE) &&
-        (top->paint_flags & (PAINT_HAS_PIXEL_FORMAT | PAINT_PIXEL_FORMAT_CHILD)))
+        (top->paint_flags & (PAINT_HAS_PIXEL_FORMAT | PAINT_PIXEL_FORMAT_CHILD) || old_pixel_format))
         reply->surface_win = top->handle;
 }
 

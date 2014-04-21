@@ -64,6 +64,7 @@ struct wgl_context
     HWND                    draw_hwnd;
     macdrv_view             draw_view;
     struct wgl_pbuffer     *draw_pbuffer;
+    struct wgl_surface     *draw_surface;
     macdrv_view             read_view;
     struct wgl_pbuffer     *read_pbuffer;
     BOOL                    has_been_current;
@@ -104,6 +105,29 @@ static CRITICAL_SECTION_DEBUG dc_pbuffers_section_debug =
       0, 0, { (DWORD_PTR)(__FILE__ ": dc_pbuffers_section") }
 };
 static CRITICAL_SECTION dc_pbuffers_section = { &dc_pbuffers_section_debug, -1, 0, 0, 0, 0 };
+
+
+struct wgl_surface
+{
+    struct list     entry;
+    LONG            refs;
+    int             format;
+    int             swap_interval;
+    HWND            hwnd;
+    macdrv_view     gl_view;
+};
+
+static struct list surface_list = LIST_INIT(surface_list);
+static CFMutableDictionaryRef dc_surfaces;
+
+static CRITICAL_SECTION surfaces_section;
+static CRITICAL_SECTION_DEBUG surfaces_section_debug =
+{
+    0, 0, &surfaces_section,
+    { &surfaces_section_debug.ProcessLocksList, &surfaces_section_debug.ProcessLocksList },
+      0, 0, { (DWORD_PTR)(__FILE__ ": surfaces_section") }
+};
+static CRITICAL_SECTION surfaces_section = { &surfaces_section_debug, -1, 0, 0, 0, 0 };
 
 
 static struct opengl_funcs opengl_funcs;
@@ -1307,11 +1331,11 @@ static BOOL get_gl_view_window_rect(struct macdrv_win_data *data, macdrv_window 
 
 
 /***********************************************************************
- *              set_win_format
+ *              get_window_gl_view
  */
-static BOOL set_win_format(struct macdrv_win_data *data, int format)
+static macdrv_view get_window_gl_view(struct macdrv_win_data *data)
 {
-    TRACE("hwnd %p format %d\n", data->hwnd, format);
+    TRACE("hwnd %p\n", data->hwnd);
 
     if (!data->gl_view)
     {
@@ -1320,19 +1344,33 @@ static BOOL set_win_format(struct macdrv_win_data *data, int format)
         if (!get_gl_view_window_rect(data, &cocoa_window, &data->gl_rect))
         {
             ERR("no top-level parent with Cocoa window in this process\n");
-            return FALSE;
+            return NULL;
         }
 
         data->gl_view = macdrv_create_view(cocoa_window, cgrect_from_rect(data->gl_rect));
         if (!data->gl_view)
         {
             WARN("failed to create GL view for window %p rect %s\n", cocoa_window, wine_dbgstr_rect(&data->gl_rect));
-            return FALSE;
+            return NULL;
         }
 
         TRACE("created GL view %p in window %p at %s\n", data->gl_view, cocoa_window,
               wine_dbgstr_rect(&data->gl_rect));
     }
+
+    return data->gl_view;
+}
+
+
+/***********************************************************************
+ *              set_win_format
+ */
+static BOOL set_win_format(struct macdrv_win_data *data, int format)
+{
+    TRACE("hwnd %p format %d\n", data->hwnd, format);
+
+    if (!get_window_gl_view(data))
+        return FALSE;
 
     data->pixel_format = format;
 
@@ -1347,71 +1385,111 @@ static BOOL set_win_format(struct macdrv_win_data *data, int format)
  */
 static BOOL set_pixel_format(HDC hdc, int fmt, BOOL allow_reset)
 {
-    struct macdrv_win_data *data;
-    const pixel_format *pf;
+    const pixel_format *pf = get_pixel_format(fmt, FALSE);
     HWND hwnd = WindowFromDC(hdc);
     BOOL ret = FALSE;
 
     TRACE("hdc %p format %d\n", hdc, fmt);
 
-    if (!hwnd || hwnd == GetDesktopWindow())
+    if (hwnd)
     {
-        WARN("not a proper window DC %p/%p\n", hdc, hwnd);
-        return FALSE;
-    }
+        struct macdrv_win_data *data;
+        BOOL had_format = FALSE;
 
-    if (!(data = get_win_data(hwnd)))
-    {
-        FIXME("DC for window %p of other process: not implemented\n", hwnd);
-        return FALSE;
-    }
+        if (hwnd == GetDesktopWindow())
+        {
+            WARN("not a proper window DC %p/%p\n", hdc, hwnd);
+            return FALSE;
+        }
 
-    if (!allow_reset && data->pixel_format)  /* cannot change it if already set */
-    {
-        ret = (data->pixel_format == fmt);
-        goto done;
-    }
+        if (!(data = get_win_data(hwnd)))
+        {
+            FIXME("DC for window %p of other process: not implemented\n", hwnd);
+            return FALSE;
+        }
 
-    /* Check if fmt is in our list of supported formats to see if it is supported. */
-    pf = get_pixel_format(fmt, FALSE /* non-displayable */);
-    if (!pf)
-    {
-        ERR("Invalid pixel format: %d\n", fmt);
-        goto done;
-    }
+        if (!allow_reset && data->pixel_format)  /* cannot change it if already set */
+        {
+            ret = (data->pixel_format == fmt);
+            goto done;
+        }
 
-    if (!pf->window)
-    {
-        WARN("Pixel format %d is not compatible for window rendering\n", fmt);
-        goto done;
-    }
+        /* Check if fmt is in our list of supported formats to see if it is supported. */
+        if (!pf)
+        {
+            ERR("Invalid pixel format: %d\n", fmt);
+            goto done;
+        }
 
-    if (!set_win_format(data, fmt))
-    {
-        WARN("Couldn't set format of the window, returning failure\n");
-        goto done;
-    }
+        if (!pf->window)
+        {
+            WARN("Pixel format %d is not compatible for window rendering\n", fmt);
+            goto done;
+        }
 
-    TRACE("pixel format:\n");
-    TRACE("           window: %u\n", (unsigned int)pf->window);
-    TRACE("          pBuffer: %u\n", (unsigned int)pf->pbuffer);
-    TRACE("      accelerated: %u\n", (unsigned int)pf->accelerated);
-    TRACE("       color bits: %u%s\n", (unsigned int)color_modes[pf->color_mode].color_bits, (color_modes[pf->color_mode].is_float ? " float" : ""));
-    TRACE("       alpha bits: %u\n", (unsigned int)color_modes[pf->color_mode].alpha_bits);
-    TRACE("      aux buffers: %u\n", (unsigned int)pf->aux_buffers);
-    TRACE("       depth bits: %u\n", (unsigned int)pf->depth_bits);
-    TRACE("     stencil bits: %u\n", (unsigned int)pf->stencil_bits);
-    TRACE("       accum bits: %u\n", (unsigned int)pf->accum_mode ? color_modes[pf->accum_mode - 1].color_bits : 0);
-    TRACE("    double_buffer: %u\n", (unsigned int)pf->double_buffer);
-    TRACE("           stereo: %u\n", (unsigned int)pf->stereo);
-    TRACE("   sample_buffers: %u\n", (unsigned int)pf->sample_buffers);
-    TRACE("          samples: %u\n", (unsigned int)pf->samples);
-    TRACE("    backing_store: %u\n", (unsigned int)pf->backing_store);
-    ret = TRUE;
+        had_format = data->pixel_format != 0;
+        if (!set_win_format(data, fmt))
+        {
+            WARN("Couldn't set format of the window, returning failure\n");
+            goto done;
+        }
+
+        if (!had_format) data->gl_view_refs++;
+        ret = TRUE;
 
 done:
-    release_win_data(data);
-    if (ret) __wine_set_pixel_format(hwnd, fmt);
+        release_win_data(data);
+        if (ret && !had_format)
+            __wine_track_gl_surfaces(hwnd, 1);
+    }
+    else
+    {
+        struct wgl_surface *surface;
+
+        EnterCriticalSection(&surfaces_section);
+
+        surface = (struct wgl_surface*)CFDictionaryGetValue(dc_surfaces, hdc);
+        if (surface)
+        {
+            TRACE("surface %p window %p\n", surface, surface->hwnd);
+
+            if (!allow_reset && surface->format)
+                ret = (surface->format == fmt);
+            else if (!pf)
+                ERR("Invalid pixel format: %d\n", fmt);
+            else if (!pf->window)
+                WARN("Pixel format %d is not compatible for window rendering\n", fmt);
+            else
+            {
+                surface->format = fmt;
+                ret = TRUE;
+            }
+        }
+        else
+            WARN("not a window or surface DC %p\n", hdc);
+
+        LeaveCriticalSection(&surfaces_section);
+    }
+
+    if (ret)
+    {
+        TRACE("pixel format:\n");
+        TRACE("           window: %u\n", (unsigned int)pf->window);
+        TRACE("          pBuffer: %u\n", (unsigned int)pf->pbuffer);
+        TRACE("      accelerated: %u\n", (unsigned int)pf->accelerated);
+        TRACE("       color bits: %u%s\n", (unsigned int)color_modes[pf->color_mode].color_bits, (color_modes[pf->color_mode].is_float ? " float" : ""));
+        TRACE("       alpha bits: %u\n", (unsigned int)color_modes[pf->color_mode].alpha_bits);
+        TRACE("      aux buffers: %u\n", (unsigned int)pf->aux_buffers);
+        TRACE("       depth bits: %u\n", (unsigned int)pf->depth_bits);
+        TRACE("     stencil bits: %u\n", (unsigned int)pf->stencil_bits);
+        TRACE("       accum bits: %u\n", (unsigned int)pf->accum_mode ? color_modes[pf->accum_mode - 1].color_bits : 0);
+        TRACE("    double_buffer: %u\n", (unsigned int)pf->double_buffer);
+        TRACE("           stereo: %u\n", (unsigned int)pf->stereo);
+        TRACE("   sample_buffers: %u\n", (unsigned int)pf->sample_buffers);
+        TRACE("          samples: %u\n", (unsigned int)pf->samples);
+        TRACE("    backing_store: %u\n", (unsigned int)pf->backing_store);
+    }
+
     return ret;
 }
 
@@ -1433,11 +1511,25 @@ void set_gl_view_parent(HWND hwnd, HWND parent)
 
         if (!get_gl_view_window_rect(data, &cocoa_window, &data->gl_rect))
         {
+            struct wgl_surface *surface;
+            macdrv_view gl_view = data->gl_view;
+            int refs = data->gl_view_refs;
+
             ERR("no top-level parent with Cocoa window in this process\n");
-            macdrv_dispose_view(data->gl_view);
             data->gl_view = NULL;
+            data->gl_view_refs = 0;
             release_win_data(data);
-            __wine_set_pixel_format( hwnd, 0 );
+
+            EnterCriticalSection(&surfaces_section);
+            LIST_FOR_EACH_ENTRY(surface, &surface_list, struct wgl_surface, entry)
+            {
+                if (surface->hwnd == hwnd && surface->gl_view == gl_view)
+                    surface->gl_view = NULL;
+            }
+            LeaveCriticalSection(&surfaces_section);
+
+            __wine_track_gl_surfaces(hwnd, -refs);
+            macdrv_dispose_view(gl_view);
             return;
         }
 
@@ -1479,6 +1571,48 @@ static void make_context_current(struct wgl_context *context, BOOL read)
 
 
 /**********************************************************************
+ *              release_surface
+ */
+static void release_surface(struct wgl_surface *surface)
+{
+    if (!surface) return;
+
+    EnterCriticalSection(&surfaces_section);
+
+    if (--surface->refs > 0)
+    {
+        LeaveCriticalSection(&surfaces_section);
+        return;
+    }
+
+    list_remove(&surface->entry);
+
+    LeaveCriticalSection(&surfaces_section);
+
+    if (IsWindow(surface->hwnd) && surface->gl_view)
+    {
+        struct macdrv_win_data *data;
+
+        if ((data = get_win_data(surface->hwnd)))
+        {
+            if (surface->gl_view != data->gl_view)
+                ERR("surface %p has mismatched window %p and GL view %p\n", surface, surface->hwnd, surface->gl_view);
+            else if (!--data->gl_view_refs)
+            {
+                macdrv_dispose_view(data->gl_view);
+                data->gl_view = NULL;
+            }
+            release_win_data(data);
+        }
+
+        __wine_track_gl_surfaces(surface->hwnd, -1);
+    }
+
+    HeapFree(GetProcessHeap(), 0, surface);
+}
+
+
+/**********************************************************************
  *              set_swap_interval
  */
 static BOOL set_swap_interval(struct wgl_context *context, long interval)
@@ -1508,7 +1642,9 @@ static void sync_swap_interval(struct wgl_context *context)
     {
         int interval;
 
-        if (context->draw_hwnd)
+        if (context->draw_surface)
+            interval = context->draw_surface->swap_interval;
+        else if (context->draw_hwnd)
         {
             struct macdrv_win_data *data = get_win_data(context->draw_hwnd);
             if (data)
@@ -2220,6 +2356,63 @@ done:
 
 
 /**********************************************************************
+ *              macdrv_wglCreateSurfaceWINE
+ *
+ * WGL_WINE_surface: wglCreateSurfaceWINE
+ */
+static struct wgl_surface *macdrv_wglCreateSurfaceWINE(HDC hdc, HWND proxy_window)
+{
+    struct wgl_surface* surface;
+
+    TRACE("hdc %p proxy_window %p\n", hdc, proxy_window);
+
+    surface = HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, sizeof(*surface));
+    surface->refs = 1;
+    surface->swap_interval = 1;
+    surface->hwnd = WindowFromDC(hdc);
+    if (surface->hwnd == GetDesktopWindow())
+        surface->hwnd = NULL;
+
+    if (surface->hwnd)
+    {
+        struct macdrv_win_data *data;
+
+        if (!(data = get_win_data(surface->hwnd)))
+        {
+            FIXME("surface for window %p of other process: not implemented\n", surface->hwnd);
+            HeapFree(GetProcessHeap(), 0, surface);
+            return NULL;
+        }
+
+        surface->gl_view = get_window_gl_view(data);
+        if (!surface->gl_view)
+        {
+            release_win_data(data);
+            HeapFree(GetProcessHeap(), 0, surface);
+            return NULL;
+        }
+
+        data->gl_view_refs++;
+        release_win_data(data);
+        __wine_track_gl_surfaces(surface->hwnd, 1);
+    }
+    else
+    {
+        struct macdrv_thread_data *thread_data = macdrv_init_thread_data();
+        surface->gl_view = macdrv_create_fullscreen_gl_view(thread_data->queue);
+        TRACE("created GL view %p for full-screen\n", surface->gl_view);
+    }
+
+    EnterCriticalSection(&surfaces_section);
+    list_add_tail(&surface_list, &surface->entry);
+    LeaveCriticalSection(&surfaces_section);
+
+    TRACE(" -> %p\n", surface);
+    return surface;
+}
+
+
+/**********************************************************************
  *              macdrv_wglDestroyPbufferARB
  *
  * WGL_ARB_pbuffer: wglDestroyPbufferARB
@@ -2230,6 +2423,20 @@ static BOOL macdrv_wglDestroyPbufferARB(struct wgl_pbuffer *pbuffer)
     if (pbuffer && pbuffer->pbuffer)
         CGLReleasePBuffer(pbuffer->pbuffer);
     HeapFree(GetProcessHeap(), 0, pbuffer);
+    return GL_TRUE;
+}
+
+
+/**********************************************************************
+ *              macdrv_wglDestroySurfaceWINE
+ *
+ * WGL_WINE_surface: wglDestroySurfaceWINE
+ */
+static BOOL macdrv_wglDestroySurfaceWINE(struct wgl_surface *surface)
+{
+    TRACE("surface %p\n", surface);
+
+    release_surface(surface);
     return GL_TRUE;
 }
 
@@ -2284,6 +2491,28 @@ static HDC macdrv_wglGetPbufferDCARB(struct wgl_pbuffer *pbuffer)
     LeaveCriticalSection(&dc_pbuffers_section);
 
     TRACE("pbuffer %p -> hdc %p\n", pbuffer, hdc);
+    return hdc;
+}
+
+
+/**********************************************************************
+ *              macdrv_wglGetSurfaceDCWINE
+ *
+ * WGL_WINE_surface: wglGetSurfaceDCWINE
+ */
+static HDC macdrv_wglGetSurfaceDCWINE(struct wgl_surface *surface)
+{
+    HDC hdc;
+
+    hdc = CreateDCA("DISPLAY", NULL, NULL, NULL);
+    if (!hdc) return 0;
+
+    EnterCriticalSection(&surfaces_section);
+    surface->refs++;
+    CFDictionarySetValue(dc_surfaces, hdc, surface);
+    LeaveCriticalSection(&surfaces_section);
+
+    TRACE("surface %p -> hdc %p\n", surface, hdc);
     return hdc;
 }
 
@@ -2636,7 +2865,13 @@ static int macdrv_wglGetSwapIntervalEXT(void)
 
     TRACE("\n");
 
-    if ((data = get_win_data(context->draw_hwnd)))
+    if (context->draw_surface)
+    {
+        value = context->draw_surface->swap_interval;
+        if (InterlockedCompareExchange(&context->update_swap_interval, FALSE, TRUE))
+            set_swap_interval(context, value);
+    }
+    else if ((data = get_win_data(context->draw_hwnd)))
     {
         value = data->swap_interval;
         release_win_data(data);
@@ -2673,6 +2908,7 @@ static BOOL macdrv_wglMakeContextCurrentARB(HDC draw_hdc, HDC read_hdc, struct w
 {
     struct macdrv_win_data *data;
     HWND hwnd;
+    struct wgl_surface *old_surface = NULL;
 
     TRACE("draw_hdc %p read_hdc %p context %p/%p/%p\n", draw_hdc, read_hdc, context,
           (context ? context->context : NULL), (context ? context->cglcontext : NULL));
@@ -2713,41 +2949,77 @@ static BOOL macdrv_wglMakeContextCurrentARB(HDC draw_hdc, HDC read_hdc, struct w
         context->draw_hwnd = hwnd;
         context->draw_view = data->gl_view;
         context->draw_pbuffer = NULL;
+        old_surface = context->draw_surface;
+        context->draw_surface = NULL;
         release_win_data(data);
     }
     else
     {
-        struct wgl_pbuffer *pbuffer;
+        struct wgl_surface *surface;
 
-        EnterCriticalSection(&dc_pbuffers_section);
-        pbuffer = (struct wgl_pbuffer*)CFDictionaryGetValue(dc_pbuffers, draw_hdc);
-        if (pbuffer)
+        EnterCriticalSection(&surfaces_section);
+        surface = (struct wgl_surface*)CFDictionaryGetValue(dc_surfaces, draw_hdc);
+        if (surface)
         {
-            if (context->format != pbuffer->format)
+            if (context->format != surface->format)
             {
-                WARN("mismatched pixel format draw_hdc %p %u context %p %u\n", draw_hdc, pbuffer->format, context, context->format);
-                LeaveCriticalSection(&dc_pbuffers_section);
+                WARN("mismatched pixel format draw_hdc %p %u context %p %u\n", draw_hdc, surface->format, context, context->format);
+                LeaveCriticalSection(&surfaces_section);
                 SetLastError(ERROR_INVALID_PIXEL_FORMAT);
                 return FALSE;
             }
 
             if (allow_vsync &&
-                (InterlockedCompareExchange(&context->update_swap_interval, FALSE, TRUE) || pbuffer != context->draw_pbuffer))
-                set_swap_interval(context, 0);
-        }
-        else
-        {
-            WARN("no window or pbuffer for DC\n");
-            LeaveCriticalSection(&dc_pbuffers_section);
-            SetLastError(ERROR_INVALID_HANDLE);
-            return FALSE;
-        }
+                (InterlockedCompareExchange(&context->update_swap_interval, FALSE, TRUE) || surface != context->draw_surface))
+                set_swap_interval(context, surface->swap_interval);
 
-        context->draw_hwnd = NULL;
-        context->draw_view = NULL;
-        context->draw_pbuffer = pbuffer;
-        LeaveCriticalSection(&dc_pbuffers_section);
+            context->draw_hwnd = surface->hwnd;
+            context->draw_view = surface->gl_view;
+            context->draw_pbuffer = NULL;
+            surface->refs++;
+            old_surface = context->draw_surface;
+            context->draw_surface = surface;
+        }
+        LeaveCriticalSection(&surfaces_section);
+
+        if (!surface)
+        {
+            struct wgl_pbuffer *pbuffer;
+
+            EnterCriticalSection(&dc_pbuffers_section);
+            pbuffer = (struct wgl_pbuffer*)CFDictionaryGetValue(dc_pbuffers, draw_hdc);
+            if (pbuffer)
+            {
+                if (context->format != pbuffer->format)
+                {
+                    WARN("mismatched pixel format draw_hdc %p %u context %p %u\n", draw_hdc, pbuffer->format, context, context->format);
+                    LeaveCriticalSection(&dc_pbuffers_section);
+                    SetLastError(ERROR_INVALID_PIXEL_FORMAT);
+                    return FALSE;
+                }
+
+                if (allow_vsync &&
+                    (InterlockedCompareExchange(&context->update_swap_interval, FALSE, TRUE) || pbuffer != context->draw_pbuffer))
+                    set_swap_interval(context, 0);
+            }
+            else
+            {
+                WARN("no window, surface, or pbuffer for DC\n");
+                LeaveCriticalSection(&dc_pbuffers_section);
+                SetLastError(ERROR_INVALID_HANDLE);
+                return FALSE;
+            }
+
+            context->draw_hwnd = NULL;
+            context->draw_view = NULL;
+            context->draw_pbuffer = pbuffer;
+            old_surface = context->draw_surface;
+            context->draw_surface = NULL;
+            LeaveCriticalSection(&dc_pbuffers_section);
+        }
     }
+
+    release_surface(old_surface);
 
     context->read_view = NULL;
     context->read_pbuffer = NULL;
@@ -2764,9 +3036,20 @@ static BOOL macdrv_wglMakeContextCurrentARB(HDC draw_hdc, HDC read_hdc, struct w
         }
         else
         {
-            EnterCriticalSection(&dc_pbuffers_section);
-            context->read_pbuffer = (struct wgl_pbuffer*)CFDictionaryGetValue(dc_pbuffers, read_hdc);
-            LeaveCriticalSection(&dc_pbuffers_section);
+            struct wgl_surface *surface;
+
+            EnterCriticalSection(&surfaces_section);
+            surface = (struct wgl_surface*)CFDictionaryGetValue(dc_surfaces, read_hdc);
+            if (surface && surface->gl_view != context->draw_view)
+                context->read_view = surface->gl_view;
+            LeaveCriticalSection(&surfaces_section);
+
+            if (!surface)
+            {
+                EnterCriticalSection(&dc_pbuffers_section);
+                context->read_pbuffer = (struct wgl_pbuffer*)CFDictionaryGetValue(dc_pbuffers, read_hdc);
+                LeaveCriticalSection(&dc_pbuffers_section);
+            }
         }
     }
 
@@ -2919,6 +3202,37 @@ static int macdrv_wglReleasePbufferDCARB(struct wgl_pbuffer *pbuffer, HDC hdc)
 
 
 /**********************************************************************
+ *              macdrv_wglReleaseSurfaceDCWINE
+ *
+ * WGL_WINE_surface: wglReleaseSurfaceDCWINE
+ */
+static int macdrv_wglReleaseSurfaceDCWINE(struct wgl_surface *surface, HDC hdc)
+{
+    struct wgl_surface *prev;
+
+    TRACE("surface %p hdc %p\n", surface, hdc);
+
+    EnterCriticalSection(&surfaces_section);
+
+    prev = (struct wgl_surface*)CFDictionaryGetValue(dc_surfaces, hdc);
+    if (prev)
+    {
+        if (prev != surface)
+            FIXME("hdc %p isn't associated with surface %p\n", hdc, surface);
+        CFDictionaryRemoveValue(dc_surfaces, hdc);
+    }
+    else hdc = 0;
+
+    LeaveCriticalSection(&surfaces_section);
+
+    if (prev)
+        release_surface(prev);
+
+    return hdc && DeleteDC(hdc);
+}
+
+
+/**********************************************************************
  *              macdrv_wglReleaseTexImageARB
  *
  * WGL_ARB_render_texture: wglReleaseTexImageARB
@@ -3047,7 +3361,13 @@ static BOOL macdrv_wglSwapIntervalEXT(int interval)
     if (interval > 1)
         interval = 1;
 
-    if (context->draw_hwnd)
+    if (context->draw_surface)
+    {
+        changed = context->draw_surface->swap_interval != interval;
+        if (changed)
+            context->draw_surface->swap_interval = interval;
+    }
+    else if (context->draw_hwnd)
     {
         struct macdrv_win_data *data = get_win_data(context->draw_hwnd);
         if (data)
@@ -3075,7 +3395,8 @@ static BOOL macdrv_wglSwapIntervalEXT(int interval)
         EnterCriticalSection(&context_section);
         LIST_FOR_EACH_ENTRY(ctx, &context_list, struct wgl_context, entry)
         {
-            if (ctx != context && ctx->draw_hwnd == context->draw_hwnd)
+            if (ctx != context &&
+                (context->draw_surface ? ctx->draw_surface == context->draw_surface : ctx->draw_hwnd == context->draw_hwnd))
                 InterlockedExchange(&context->update_swap_interval, TRUE);
         }
         LeaveCriticalSection(&context_section);
@@ -3177,6 +3498,12 @@ static void load_extensions(void)
      */
     register_extension("WGL_WINE_pixel_format_passthrough");
     opengl_funcs.ext.p_wglSetPixelFormatWINE = macdrv_wglSetPixelFormatWINE;
+
+    register_extension("WGL_WINE_surface");
+    opengl_funcs.ext.p_wglCreateSurfaceWINE     = macdrv_wglCreateSurfaceWINE;
+    opengl_funcs.ext.p_wglGetSurfaceDCWINE      = macdrv_wglGetSurfaceDCWINE;
+    opengl_funcs.ext.p_wglReleaseSurfaceDCWINE  = macdrv_wglReleaseSurfaceDCWINE;
+    opengl_funcs.ext.p_wglDestroySurfaceWINE    = macdrv_wglDestroySurfaceWINE;
 }
 
 
@@ -3193,6 +3520,13 @@ static BOOL init_opengl(void)
 
     dc_pbuffers = CFDictionaryCreateMutable(NULL, 0, NULL, NULL);
     if (!dc_pbuffers)
+    {
+        WARN("CFDictionaryCreateMutable failed\n");
+        return FALSE;
+    }
+
+    dc_surfaces = CFDictionaryCreateMutable(NULL, 0, NULL, NULL);
+    if (!dc_surfaces)
     {
         WARN("CFDictionaryCreateMutable failed\n");
         return FALSE;
@@ -3296,18 +3630,29 @@ static int get_dc_pixel_format(HDC hdc)
     }
     else
     {
-        struct wgl_pbuffer *pbuffer;
+        struct wgl_surface *surface;
 
-        EnterCriticalSection(&dc_pbuffers_section);
-        pbuffer = (struct wgl_pbuffer*)CFDictionaryGetValue(dc_pbuffers, hdc);
-        if (pbuffer)
-            format = pbuffer->format;
-        else
+        EnterCriticalSection(&surfaces_section);
+        surface = (struct wgl_surface*)CFDictionaryGetValue(dc_surfaces, hdc);
+        if (surface)
+            format = surface->format;
+        LeaveCriticalSection(&surfaces_section);
+
+        if (!surface)
         {
-            WARN("no window or pbuffer for DC %p\n", hdc);
-            format = 0;
+            struct wgl_pbuffer *pbuffer;
+
+            EnterCriticalSection(&dc_pbuffers_section);
+            pbuffer = (struct wgl_pbuffer*)CFDictionaryGetValue(dc_pbuffers, hdc);
+            if (pbuffer)
+                format = pbuffer->format;
+            else
+            {
+                WARN("no window, surface, or pbuffer for DC %p\n", hdc);
+                format = 0;
+            }
+            LeaveCriticalSection(&dc_pbuffers_section);
         }
-        LeaveCriticalSection(&dc_pbuffers_section);
     }
 
     return format;
@@ -3555,6 +3900,7 @@ static void macdrv_wglDeleteContext(struct wgl_context *context)
     LeaveCriticalSection(&context_section);
 
     macdrv_dispose_opengl_context(context->context);
+    release_surface(context->draw_surface);
     HeapFree(GetProcessHeap(), 0, context);
 }
 
@@ -3709,20 +4055,31 @@ static BOOL macdrv_wglSwapBuffers(HDC hdc)
     }
     else
     {
-        struct wgl_pbuffer *pbuffer;
+        struct wgl_surface *surface;
 
-        EnterCriticalSection(&dc_pbuffers_section);
-        pbuffer = (struct wgl_pbuffer*)CFDictionaryGetValue(dc_pbuffers, hdc);
-        LeaveCriticalSection(&dc_pbuffers_section);
-
-        if (!pbuffer)
-        {
-            SetLastError(ERROR_INVALID_HANDLE);
-            return FALSE;
-        }
-
-        if (context && context->draw_pbuffer == pbuffer)
+        EnterCriticalSection(&surfaces_section);
+        surface = (struct wgl_surface*)CFDictionaryGetValue(dc_surfaces, hdc);
+        if (surface && context && context->draw_view == surface->gl_view)
             match = TRUE;
+        LeaveCriticalSection(&surfaces_section);
+
+        if (!surface)
+        {
+            struct wgl_pbuffer *pbuffer;
+
+            EnterCriticalSection(&dc_pbuffers_section);
+            pbuffer = (struct wgl_pbuffer*)CFDictionaryGetValue(dc_pbuffers, hdc);
+            LeaveCriticalSection(&dc_pbuffers_section);
+
+            if (!pbuffer)
+            {
+                SetLastError(ERROR_INVALID_HANDLE);
+                return FALSE;
+            }
+
+            if (context && context->draw_pbuffer == pbuffer)
+                match = TRUE;
+        }
     }
 
     if (match)
