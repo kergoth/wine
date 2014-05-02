@@ -570,9 +570,33 @@ LPVOID WINAPI MapViewOfFileEx( HANDLE handle, DWORD access,
  *	Failure: FALSE.
  *
  */
+
+/************************************************************************/
+/* Make sure UnmapViewOfFile is only called for the view's base address */
+/* (the game has a global cleanup function for StreamIO objects that is */
+/* using a dynamic_cast<MemRWStream *> to unmap file views - BUT during */
+/* savegame loading MemRWStream objects are created for sub-chunks, and */
+/* therefore the game depends on the Windows 9x API behavior of failing */
+/* for addresses that are not the base address of a mapped file view... */
+/* Windows XP and newer provide an AppCompat shim "KingsQuestMask" that */
+/* hooks MapViewOfFile/UnmapViewOfFile and maintains an address list to */
+/* make sure that only previously mapped views are unmapped by the API) */
+/************************************************************************/
+
 BOOL WINAPI UnmapViewOfFile( LPCVOID addr )
 {
-    NTSTATUS status = NtUnmapViewOfSection( GetCurrentProcess(), (void *)addr );
+    NTSTATUS status;
+    MEMORY_BASIC_INFORMATION MemInfo;
+    if (addr && VirtualQuery( addr,
+        &MemInfo, sizeof( MEMORY_BASIC_INFORMATION ) )) {
+        if ((addr != MemInfo.BaseAddress) ||
+            (addr != MemInfo.AllocationBase)) {
+            SetLastError( ERROR_INVALID_ADDRESS );
+            return FALSE;
+        }
+    }
+
+    status = NtUnmapViewOfSection( GetCurrentProcess(), (void *)addr );
     if (status) SetLastError( RtlNtStatusToDosError(status) );
     return !status;
 }
