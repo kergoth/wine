@@ -1387,6 +1387,9 @@ BOOL CDECL X11DRV_ClipCursor( LPCRECT clip )
 
     if (!clip) clip = &virtual_rect;
 
+    if (GetWindowThreadProcessId( GetDesktopWindow(), NULL ) == GetCurrentThreadId())
+        return TRUE;  /* don't clip in the desktop process */
+
     if (grab_pointer)
     {
         HWND foreground = GetForegroundWindow();
