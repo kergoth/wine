@@ -100,36 +100,34 @@ static void dump_rdw_flags(UINT flags)
 }
 
 
-/***********************************************************************
- *		update_visible_region
- *
- * Set the visible region and X11 drawable for the DC associated to
- * a given window.
- */
-static void update_visible_region( struct dce *dce )
+static inline unsigned int get_bitmap_info_colors( const BITMAPINFO *info )
 {
-    struct window_surface *surface = NULL;
+    if (info->bmiHeader.biBitCount <= 8) return 1 << info->bmiHeader.biBitCount;
+    if (info->bmiHeader.biCompression == BI_BITFIELDS) return 3;
+    return 0;
+}
+
+/***********************************************************************
+ *		get_visible_region
+ *
+ * Fetch the visible region from the server.
+ */
+static HRGN get_visible_region( HWND hwnd, UINT flags, HWND *top_win, RECT *win_rect, RECT *top_rect,
+                                UINT *paint_flags, HANDLE *surface )
+{
     NTSTATUS status;
     HRGN vis_rgn = 0;
-    HWND top_win = 0;
-    DWORD flags = dce->flags;
-    DWORD paint_flags = 0;
     size_t size = 256;
-    RECT win_rect, top_rect;
-    WND *win;
-
-    /* don't clip siblings if using parent clip region */
-    if (flags & DCX_PARENTCLIP) flags &= ~DCX_CLIPSIBLINGS;
 
     /* fetch the visible region from the server */
     do
     {
         RGNDATA *data = HeapAlloc( GetProcessHeap(), 0, sizeof(*data) + size - 1 );
-        if (!data) return;
+        if (!data) return 0;
 
         SERVER_START_REQ( get_visible_region )
         {
-            req->window  = wine_server_user_handle( dce->hwnd );
+            req->window  = wine_server_user_handle( hwnd );
             req->flags   = flags;
             wine_server_set_reply( req, data->Buffer, size );
             if (!(status = wine_server_call( req )))
@@ -141,16 +139,24 @@ static void update_visible_region( struct dce *dce )
                 data->rdh.nRgnSize = reply_size;
                 vis_rgn = ExtCreateRegion( NULL, size, data );
 
-                top_win         = wine_server_ptr_handle( reply->top_win );
-                win_rect.left   = reply->win_rect.left;
-                win_rect.top    = reply->win_rect.top;
-                win_rect.right  = reply->win_rect.right;
-                win_rect.bottom = reply->win_rect.bottom;
-                top_rect.left   = reply->top_rect.left;
-                top_rect.top    = reply->top_rect.top;
-                top_rect.right  = reply->top_rect.right;
-                top_rect.bottom = reply->top_rect.bottom;
-                paint_flags     = reply->paint_flags;
+                if (top_win) *top_win = wine_server_ptr_handle( reply->top_win );
+                if (paint_flags) *paint_flags = reply->paint_flags;
+                if (win_rect)
+                {
+                    win_rect->left   = reply->win_rect.left;
+                    win_rect->top    = reply->win_rect.top;
+                    win_rect->right  = reply->win_rect.right;
+                    win_rect->bottom = reply->win_rect.bottom;
+                }
+                if (top_rect)
+                {
+                    top_rect->left   = reply->top_rect.left;
+                    top_rect->top    = reply->top_rect.top;
+                    top_rect->right  = reply->top_rect.right;
+                    top_rect->bottom = reply->top_rect.bottom;
+                }
+                if (surface) *surface = wine_server_ptr_handle( reply->surface );
+                else if (reply->surface) CloseHandle( wine_server_ptr_handle( reply->surface ));
             }
             else size = reply->total_size;
         }
@@ -158,7 +164,31 @@ static void update_visible_region( struct dce *dce )
         HeapFree( GetProcessHeap(), 0, data );
     } while (status == STATUS_BUFFER_OVERFLOW);
 
-    if (status || !vis_rgn) return;
+    return vis_rgn;
+}
+
+
+/***********************************************************************
+ *		update_visible_region
+ *
+ * Set the visible region and X11 drawable for the DC associated to
+ * a given window.
+ */
+static void update_visible_region( struct dce *dce )
+{
+    struct window_surface *surface = NULL;
+    HRGN vis_rgn;
+    HWND top_win;
+    DWORD flags = dce->flags;
+    DWORD paint_flags;
+    RECT win_rect, top_rect;
+    WND *win;
+
+    /* don't clip siblings if using parent clip region */
+    if (flags & DCX_PARENTCLIP) flags &= ~DCX_CLIPSIBLINGS;
+
+    vis_rgn = get_visible_region( dce->hwnd, flags, &top_win, &win_rect, &top_rect, &paint_flags, NULL );
+    if (!vis_rgn) return;
 
     USER_Driver->pGetDC( dce->hdc, dce->hwnd, top_win, &win_rect, &top_rect, flags );
 
@@ -622,6 +652,97 @@ static BOOL redraw_window_rects( HWND hwnd, UINT flags, const RECT *rects, UINT 
 
 
 /***********************************************************************
+ *           update_child_from_surface
+ */
+static void update_child_from_surface( HWND hwnd, HRGN rgn )
+{
+    char buffer[offsetof( BITMAPINFO, bmiColors[256] )];
+    BITMAPINFO *info = (BITMAPINFO *)buffer;
+    HANDLE mapping = 0;
+    void *data;
+    SIZE_T size;
+    NTSTATUS status;
+    LARGE_INTEGER offset;
+    RECT rect;
+    HRGN tmp_rgn;
+
+    tmp_rgn = get_visible_region( hwnd, DCX_WINDOW | DCX_CLIPSIBLINGS, NULL, &rect, NULL, NULL, &mapping );
+    if (!tmp_rgn) return;
+
+    if (!mapping)
+    {
+        DeleteObject( tmp_rgn );
+        return;
+    }
+    if (CombineRgn( tmp_rgn, tmp_rgn, rgn, RGN_AND ) <= NULLREGION)
+    {
+        CloseHandle( mapping );
+        DeleteObject( tmp_rgn );
+        return;
+    }
+
+    offset.QuadPart = 0;
+    data = NULL;
+    size = 0;
+    status = NtMapViewOfSection( mapping, GetCurrentProcess(), &data, 0, 0, &offset, &size,
+                                 ViewShare, 0, PAGE_READWRITE );
+    CloseHandle( mapping );
+
+    if (status >= 0)
+    {
+        RECT rc, surf_rect;
+        DWORD header_size;
+        HDC hdc = GetDCEx( GetDesktopWindow(), tmp_rgn, DCX_INTERSECTRGN );
+
+        memcpy( &surf_rect, data, sizeof(surf_rect) );
+        data = (RECT *)data + 1;
+        memcpy( info, data, sizeof(info->bmiHeader) );
+        header_size = offsetof( BITMAPINFO, bmiColors[get_bitmap_info_colors( info )] );
+        memcpy( info, data, header_size );
+        data = (char *)data + header_size;
+
+        rc = surf_rect;
+        OffsetRect( &rc, rect.left, rect.top );
+        if (IntersectRect( &rc, &rc, &rect ))
+        {
+            SetDIBitsToDevice( hdc, rc.left, rc.top, rc.right - rc.left, rc.bottom - rc.top,
+                               rc.left - rect.left - surf_rect.left,
+                               surf_rect.bottom - (rc.bottom - rect.top),
+                               0, surf_rect.bottom - surf_rect.top,
+                               data, info, DIB_RGB_COLORS );
+            TRACE( "refresh surface %p ptr %p size %lx rect %s win %s -> %s\n",
+                   hwnd, data, size, wine_dbgstr_rect(&surf_rect), wine_dbgstr_rect( &rect ),
+                   wine_dbgstr_rect(&rc) );
+        }
+        CombineRgn( rgn, rgn, tmp_rgn, RGN_DIFF );
+        tmp_rgn = 0;
+        ReleaseDC( 0, hdc );
+        NtUnmapViewOfSection( GetCurrentProcess(), data );
+    }
+    else
+    {
+        TRACE( "refresh surface %p status %x\n", hwnd, status );
+        DeleteObject( tmp_rgn );
+    }
+}
+
+
+/***********************************************************************
+ *           update_desktop_from_surfaces
+ */
+static HRGN update_desktop_from_surfaces( HRGN rgn )
+{
+    HWND *children;
+    int i;
+
+    if (!(children = WIN_ListChildren( GetDesktopWindow() ))) return rgn;
+    for (i = 0; children[i]; i++) update_child_from_surface( children[i], rgn );
+    HeapFree( GetProcessHeap(), 0, children );
+    return rgn;
+}
+
+
+/***********************************************************************
  *           send_ncpaint
  *
  * Send a WM_NCPAINT message if needed, and return the resulting update region (in screen coords).
@@ -634,7 +755,7 @@ static HRGN send_ncpaint( HWND hwnd, HWND *child, UINT *flags )
 
     if (child) hwnd = *child;
 
-    if (hwnd == GetDesktopWindow()) return whole_rgn;
+    if (hwnd == GetDesktopWindow()) return update_desktop_from_surfaces( whole_rgn );
 
     if (whole_rgn)
     {
@@ -1507,6 +1628,8 @@ static INT scroll_window( HWND hwnd, INT dx, INT dy, const RECT *rect, const REC
             DeleteObject( hrgnClip );
         }
         DeleteObject( hrgnTemp );
+        if (rcUpdate)
+            GetRgnBox( hrgnUpdate, rcUpdate);
     } else {
         /* nothing was scrolled */
         if( !bOwnRgn)

@@ -23,7 +23,6 @@
 #include "winreg.h"
 #include "winuser.h"
 #include "wine/debug.h"
-#include "wine/list.h"
 #include "crypt32_private.h"
 
 WINE_DEFAULT_DEBUG_CHANNEL(crypt);
@@ -143,7 +142,7 @@ static void CRYPT_RegReadSerializedFromReg(HKEY key, DWORD contextType,
                                     else
                                         TRACE("hash doesn't match, ignoring\n");
                                 }
-                                contextInterface->free(context);
+                                Context_Release(context_from_ptr(context));
                             }
                         }
                     }
@@ -242,7 +241,7 @@ static BOOL CRYPT_SerializeContextsToReg(HKEY key,
             ret = TRUE;
     } while (ret && context != NULL);
     if (context)
-        contextInterface->free(context);
+        Context_Release(context_from_ptr(context));
     return ret;
 }
 

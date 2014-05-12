@@ -367,6 +367,7 @@ static WINE_CLIPFORMAT* format_for_type(WINE_CLIPFORMAT *current, CFStringRef ty
         }
     }
 
+    format = NULL;
     if (!current)
     {
         LPWSTR name;
@@ -1007,7 +1008,7 @@ static HANDLE import_utf16_to_unicodetext(CFDataRef data)
     HANDLE unicode_handle;
 
     src = (const WCHAR *)CFDataGetBytePtr(data);
-    data_len = CFDataGetLength(data);
+    data_len = CFDataGetLength(data) / sizeof(WCHAR);
     for (i = 0; i < data_len; i++)
     {
         if (src[i] == '\n')
@@ -1358,13 +1359,13 @@ static CFDataRef export_unicodetext_to_utf16(HANDLE data)
 
     dst_len = GlobalSize(data) / sizeof(WCHAR);
     if (dst_len) dst_len--; /* Leave off null terminator. */
-    ret = CFDataCreateMutable(NULL, dst_len);
+    ret = CFDataCreateMutable(NULL, dst_len * sizeof(WCHAR));
     if (ret)
     {
         LPWSTR dst;
         int i, j;
 
-        CFDataSetLength(ret, dst_len);
+        CFDataSetLength(ret, dst_len * sizeof(WCHAR));
         dst = (LPWSTR)CFDataGetMutableBytePtr(ret);
 
         /* Remove carriage returns */
@@ -1375,7 +1376,7 @@ static CFDataRef export_unicodetext_to_utf16(HANDLE data)
                 continue;
             dst[j++] = src[i];
         }
-        CFDataSetLength(ret, j);
+        CFDataSetLength(ret, j * sizeof(WCHAR));
     }
     GlobalUnlock(data);
 
@@ -1716,6 +1717,7 @@ INT CDECL macdrv_CountClipboardFormats(void)
         }
     }
 
+    CFRelease(types);
     CFRelease(seen_formats);
     TRACE(" -> %d\n", ret);
     return ret;

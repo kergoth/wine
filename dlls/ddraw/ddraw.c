@@ -776,6 +776,13 @@ static HRESULT ddraw_set_cooperative_level(struct ddraw *ddraw, HWND window,
             restore_mode_on_normal);
     DDRAW_dump_cooperativelevel(cooplevel);
 
+    /* hack for WA/WWP/Diablo, wine bug 2082
+     *
+     * These programs use dialog boxes containing standard controls, which they
+     * draw over using directdraw. If we draw to the given window, the draw will
+     * be clipped by the dialog. Instead, draw to the desktop window. */
+    if (use_desktop_hack) window = GetDesktopWindow();
+
     wined3d_mutex_lock();
 
     if (ddraw->flags & DDRAW_SCL_RECURSIVE)
@@ -2962,7 +2969,7 @@ static HRESULT CreateSurface(struct ddraw *ddraw, DDSURFACEDESC2 *DDSD,
         }
     }
 
-    if (DDSD->ddsCaps.dwCaps2 & DDSCAPS2_TEXTUREMANAGE)
+    if (DDSD->ddsCaps.dwCaps2 & (DDSCAPS2_TEXTUREMANAGE | DDSCAPS2_D3DTEXTUREMANAGE))
     {
         if (!(DDSD->ddsCaps.dwCaps & DDSCAPS_TEXTURE))
         {
@@ -3001,7 +3008,7 @@ static HRESULT CreateSurface(struct ddraw *ddraw, DDSURFACEDESC2 *DDSD,
     }
 
     if (!(desc2.ddsCaps.dwCaps & (DDSCAPS_VIDEOMEMORY | DDSCAPS_SYSTEMMEMORY))
-            && !(desc2.ddsCaps.dwCaps2 & DDSCAPS2_TEXTUREMANAGE))
+            && !(desc2.ddsCaps.dwCaps2 & (DDSCAPS2_TEXTUREMANAGE | DDSCAPS2_D3DTEXTUREMANAGE)))
     {
         enum wined3d_format_id format = wined3dformat_from_ddrawformat(&desc2.u4.ddpfPixelFormat);
         enum wined3d_resource_type rtype;
@@ -5279,7 +5286,8 @@ HRESULT ddraw_init(struct ddraw *ddraw, enum wined3d_device_type device_type)
     ddraw->numIfaces = 1;
     ddraw->ref7 = 1;
 
-    flags = WINED3D_LEGACY_DEPTH_BIAS | WINED3D_VIDMEM_ACCOUNTING;
+    flags = WINED3D_LEGACY_DEPTH_BIAS | WINED3D_VIDMEM_ACCOUNTING
+            | WINED3D_NO_CSMT;
     if (!(ddraw->wined3d = wined3d_create(7, flags)))
     {
         if (!(ddraw->wined3d = wined3d_create(7, flags | WINED3D_NO3D)))

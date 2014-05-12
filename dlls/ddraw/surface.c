@@ -5608,7 +5608,7 @@ HRESULT ddraw_surface_create_texture(struct ddraw_surface *surface, DWORD surfac
     else
         layers = 1;
 
-    if (desc->ddsCaps.dwCaps2 & DDSCAPS2_TEXTUREMANAGE)
+    if (desc->ddsCaps.dwCaps2 & (DDSCAPS2_TEXTUREMANAGE | DDSCAPS2_D3DTEXTUREMANAGE))
     {
         wined3d_desc.usage = WINED3DUSAGE_TEXTURE;
         pool = WINED3D_POOL_MANAGED;
@@ -5623,7 +5623,7 @@ HRESULT ddraw_surface_create_texture(struct ddraw_surface *surface, DWORD surfac
     }
     else
     {
-        wined3d_desc.usage = WINED3DUSAGE_TEXTURE;
+        wined3d_desc.usage = WINED3DUSAGE_TEXTURE | WINED3DUSAGE_DYNAMIC;
         pool = WINED3D_POOL_DEFAULT;
     }
 
@@ -5730,7 +5730,7 @@ HRESULT ddraw_surface_init(struct ddraw_surface *surface, struct ddraw *ddraw,
 
     if (!(desc->ddsCaps.dwCaps & (DDSCAPS_VIDEOMEMORY | DDSCAPS_SYSTEMMEMORY))
             && !((desc->ddsCaps.dwCaps & DDSCAPS_TEXTURE)
-            && (desc->ddsCaps.dwCaps2 & DDSCAPS2_TEXTUREMANAGE)))
+            && (desc->ddsCaps.dwCaps2 & (DDSCAPS2_TEXTUREMANAGE | DDSCAPS2_D3DTEXTUREMANAGE))))
     {
         /* Tests show surfaces without memory flags get these flags added
          * right after creation. */
@@ -5760,7 +5760,7 @@ HRESULT ddraw_surface_init(struct ddraw_surface *surface, struct ddraw *ddraw,
     {
         pool = WINED3D_POOL_SYSTEM_MEM;
     }
-    else if (desc->ddsCaps.dwCaps2 & DDSCAPS2_TEXTUREMANAGE)
+    else if (desc->ddsCaps.dwCaps2 & (DDSCAPS2_TEXTUREMANAGE | DDSCAPS2_D3DTEXTUREMANAGE))
     {
         pool = WINED3D_POOL_MANAGED;
         /* Managed textures have the system memory flag set. */
@@ -5771,6 +5771,7 @@ HRESULT ddraw_surface_init(struct ddraw_surface *surface, struct ddraw *ddraw,
         /* Videomemory adds localvidmem. This is mutually exclusive with
          * systemmemory and texturemanage. */
         desc->ddsCaps.dwCaps |= DDSCAPS_LOCALVIDMEM;
+        usage |= WINED3DUSAGE_DYNAMIC;
     }
 
     format = wined3dformat_from_ddrawformat(&desc->u4.ddpfPixelFormat);
@@ -5837,8 +5838,12 @@ HRESULT ddraw_surface_init(struct ddraw_surface *surface, struct ddraw *ddraw,
     }
     else
     {
+        UINT row_pitch, slice_pitch;
+        struct wined3d_resource *resource = wined3d_surface_get_resource(surface->wined3d_surface);
+        wined3d_resource_get_pitch(resource, &row_pitch, &slice_pitch);
+
         surface->surface_desc.dwFlags |= DDSD_PITCH;
-        surface->surface_desc.u1.lPitch = wined3d_surface_get_pitch(surface->wined3d_surface);
+        surface->surface_desc.u1.lPitch = row_pitch;
     }
 
     if (desc->dwFlags & DDSD_CKDESTOVERLAY)

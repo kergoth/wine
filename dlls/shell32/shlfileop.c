@@ -53,6 +53,9 @@ WINE_DEFAULT_DEBUG_CHANNEL(shell);
 
 #define FO_MASK         0xF
 
+#define DE_SAMEFILE      0x71
+#define DE_DESTSAMETREE  0x7D
+
 static const WCHAR wWildcardFile[] = {'*',0};
 static const WCHAR wWildcardChars[] = {'*','?',0};
 
@@ -350,27 +353,36 @@ static BOOL SHELL_DeleteDirectoryW(HWND hwnd, LPCWSTR pszDir, BOOL bShowUI)
 	HANDLE  hFind;
 	WIN32_FIND_DATAW wfd;
 	WCHAR   szTemp[MAX_PATH];
+	WCHAR   szPath[MAX_PATH];
+	BOOL    foundOne;
 
 	/* Make sure the directory exists before eventually prompting the user */
-	PathCombineW(szTemp, pszDir, wWildcardFile);
-	hFind = FindFirstFileW(szTemp, &wfd);
-	if (hFind == INVALID_HANDLE_VALUE)
-	  return FALSE;
+	PathCombineW(szPath, pszDir, wWildcardFile);
 
 	if (!bShowUI || (ret = SHELL_ConfirmDialogW(hwnd, ASK_DELETE_FOLDER, pszDir, NULL)))
 	{
 	  do
 	  {
-	    if (IsDotDir(wfd.cFileName))
-	      continue;
-	    PathCombineW(szTemp, pszDir, wfd.cFileName);
-	    if (FILE_ATTRIBUTE_DIRECTORY & wfd.dwFileAttributes)
-	      ret = SHELL_DeleteDirectoryW(hwnd, szTemp, FALSE);
-	    else
-	      ret = (SHNotifyDeleteFileW(szTemp) == ERROR_SUCCESS);
-	  } while (ret && FindNextFileW(hFind, &wfd));
+	    foundOne = FALSE;
+	    hFind = FindFirstFileW(szPath, &wfd);
+	    if (hFind == INVALID_HANDLE_VALUE)
+	      return FALSE;
+
+	    do
+	    {
+              if (IsDotDir(wfd.cFileName))
+                continue;
+	      foundOne = TRUE;
+              PathCombineW(szTemp, pszDir, wfd.cFileName);
+	      if (FILE_ATTRIBUTE_DIRECTORY & wfd.dwFileAttributes)
+	        ret = SHELL_DeleteDirectoryW(hwnd, szTemp, FALSE);
+	      else
+	        ret = (SHNotifyDeleteFileW(szTemp) == ERROR_SUCCESS);
+	    } while (ret && FindNextFileW(hFind, &wfd));
+
+	    FindClose(hFind);
+	  }while (ret && foundOne);
 	}
-	FindClose(hFind);
 	if (ret)
 	  ret = (SHNotifyRemoveDirectoryW(pszDir) == ERROR_SUCCESS);
 	return ret;
@@ -1428,11 +1440,15 @@ static void move_to_dir(LPSHFILEOPSTRUCTW lpFileOp, const FILE_ENTRY *feFrom, co
 static DWORD move_files(LPSHFILEOPSTRUCTW lpFileOp, const FILE_LIST *flFrom, const FILE_LIST *flTo)
 {
     DWORD i;
+    INT mismatched = 0;
     const FILE_ENTRY *entryToMove;
     const FILE_ENTRY *fileDest;
 
-    if (!flFrom->dwNumFiles || !flTo->dwNumFiles)
-        return ERROR_CANCELLED;
+    if (!flFrom->dwNumFiles)
+        return ERROR_SUCCESS;
+
+    if (!flTo->dwNumFiles)
+        return ERROR_FILE_NOT_FOUND;
 
     if (!(lpFileOp->fFlags & FOF_MULTIDESTFILES) &&
         flTo->dwNumFiles > 1 && flFrom->dwNumFiles > 1)
@@ -1450,27 +1466,42 @@ static DWORD move_files(LPSHFILEOPSTRUCTW lpFileOp, const FILE_LIST *flFrom, con
     if (!PathFileExistsW(flTo->feFiles[0].szDirectory))
         return ERROR_CANCELLED;
 
-    if ((lpFileOp->fFlags & FOF_MULTIDESTFILES) &&
-        flFrom->dwNumFiles != flTo->dwNumFiles)
-    {
-        return ERROR_CANCELLED;
-    }
+    if (lpFileOp->fFlags & FOF_MULTIDESTFILES)
+        mismatched = flFrom->dwNumFiles - flTo->dwNumFiles;
 
     fileDest = &flTo->feFiles[0];
     for (i = 0; i < flFrom->dwNumFiles; i++)
     {
         entryToMove = &flFrom->feFiles[i];
 
-        if (lpFileOp->fFlags & FOF_MULTIDESTFILES)
-            fileDest = &flTo->feFiles[i];
-
         if (!PathFileExistsW(fileDest->szDirectory))
             return ERROR_CANCELLED;
+
+        if (lpFileOp->fFlags & FOF_MULTIDESTFILES)
+        {
+            if (i >= flTo->dwNumFiles)
+                break;
+            fileDest = &flTo->feFiles[i];
+            if (mismatched && !fileDest->bExists)
+            {
+                create_dest_dirs(flTo->feFiles[i].szFullPath);
+                flTo->feFiles[i].bExists = TRUE;
+                flTo->feFiles[i].attributes = FILE_ATTRIBUTE_DIRECTORY;
+            }
+        }
 
         if (fileDest->bExists && IsAttribDir(fileDest->attributes))
             move_to_dir(lpFileOp, entryToMove, fileDest);
         else
             SHNotifyMoveFileW(entryToMove->szFullPath, fileDest->szFullPath);
+    }
+
+    if (mismatched > 0)
+    {
+        if (flFrom->bAnyDirectories)
+            return DE_DESTSAMETREE;
+        else
+            return DE_SAMEFILE;
     }
 
     return ERROR_SUCCESS;

@@ -90,6 +90,7 @@ BOOL collect_connections(collect_type_t) DECLSPEC_HIDDEN;
 typedef struct
 {
     int socket;
+    int event_socket;
     BOOL secure;
     CtxtHandle ssl_ctx;
     SecPkgContext_StreamSizes ssl_sizes;
@@ -108,6 +109,8 @@ typedef struct
     struct list pool_entry;
 } netconn_t;
 
+int create_event_socket(void);
+ 
 static inline void * __WINE_ALLOC_SIZE(1) heap_alloc(size_t len)
 {
     return HeapAlloc(GetProcessHeap(), 0, len);

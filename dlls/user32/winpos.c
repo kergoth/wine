@@ -2081,7 +2081,11 @@ BOOL set_window_pos( HWND hwnd, HWND insert_after, UINT swp_flags,
             if (!IsRectEmpty( &valid_rects[0] ))
                 wine_server_add_data( req, valid_rects, 2 * sizeof(*valid_rects) );
         }
-        if (new_surface) req->paint_flags |= SET_WINPOS_PAINT_SURFACE;
+        if (new_surface)
+        {
+            req->surface = wine_server_obj_handle( new_surface->funcs->get_mapping( new_surface ));
+            req->paint_flags |= SET_WINPOS_PAINT_SURFACE;
+        }
         if (win->pixel_format) req->paint_flags |= SET_WINPOS_PIXEL_FORMAT;
 
         if ((ret = !wine_server_call( req )))
@@ -2615,7 +2619,7 @@ void WINPOS_SysCommandSizeMove( HWND hwnd, WPARAM wParam )
     HDC hdc;
     HWND parent;
     LONG hittest = (LONG)(wParam & 0x0f);
-    WPARAM syscommand = wParam & 0xfff0;
+    WPARAM syscommand = wParam & 0xfff0,mmstate;
     HCURSOR hDragCursor = 0, hOldCursor = 0;
     POINT minTrack, maxTrack;
     POINT capturePoint, pt;
@@ -2854,6 +2858,10 @@ void WINPOS_SysCommandSizeMove( HWND hwnd, WPARAM wParam )
                               origRect.bottom - origRect.top,
                               ( hittest == HTCAPTION ) ? SWP_NOSIZE : 0 );
         }
+
+        if (hittest != HTCAPTION)
+            RedrawWindow( hwnd, NULL, NULL,
+                          RDW_INVALIDATE | RDW_ERASE | RDW_FRAME | RDW_ALLCHILDREN );
     }
 
     if (IsIconic(hwnd))
@@ -2868,4 +2876,15 @@ void WINPOS_SysCommandSizeMove( HWND hwnd, WPARAM wParam )
         }
         else WINPOS_ShowIconTitle( hwnd, TRUE );
     }
+
+    /* windows finishes this off with a WM_MOUSEMOVE with the current position
+       and buttons state. This message is relied on by some games. */
+    mmstate = 0;
+    if (GetAsyncKeyState(VK_LBUTTON)&0x1) mmstate &= MK_LBUTTON;
+    if (GetAsyncKeyState(VK_RBUTTON)&0x1) mmstate &= MK_RBUTTON;
+    if (GetAsyncKeyState(VK_MBUTTON)&0x1) mmstate &= MK_MBUTTON;
+    if (GetAsyncKeyState(VK_CONTROL)&0x1) mmstate &= MK_CONTROL;
+    if (GetAsyncKeyState(VK_SHIFT)&0x1) mmstate &= MK_SHIFT;
+
+    PostMessageW( hwnd, WM_MOUSEMOVE, mmstate, MAKELONG(pt.x,pt.y) );
 }

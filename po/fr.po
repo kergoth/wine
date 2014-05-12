@@ -5,7 +5,7 @@ msgstr ""
 "Project-Id-Version: Wine\n"
 "Report-Msgid-Bugs-To: http://bugs.winehq.org\n"
 "POT-Creation-Date: N/A\n"
-"PO-Revision-Date: 2013-10-01 21:13+0100\n"
+"PO-Revision-Date: 2014-02-07 12:23-0600\n"
 "Last-Translator: Frédéric Delanoy <frederic.delanoy@gmail.com>\n"
 "Language-Team: none\n"
 "Language: French\n"
@@ -393,8 +393,8 @@ msgctxt "hotkey"
 msgid "None"
 msgstr "Aucune"
 
-#: comctl32.rc:28 cryptui.rc:227 regedit.rc:234 taskmgr.rc:434 winedbg.rc:57
-#: winedbg.rc:72 wordpad.rc:169
+#: comctl32.rc:28 cryptui.rc:227 regedit.rc:234 taskmgr.rc:434 winedbg.rc:55
+#: winedbg.rc:67 wordpad.rc:169
 msgid "Close"
 msgstr "Fermer"
 
@@ -5031,7 +5031,7 @@ msgstr "Opération annulée par l'utilisateur.\n"
 msgid "File has a user-mapped section.\n"
 msgstr "Le fichier contient une section mappée par l'utilisateur.\n"
 
-#: winerror.mc:1756 winerror.mc:3741
+#: winerror.mc:1756 winerror.mc:3746
 msgid "Connection refused.\n"
 msgstr "Connexion refusée.\n"
 
@@ -6614,6 +6614,12 @@ msgstr "L'élément de groupe n'a pu être supprimé.\n"
 msgid "The username could not be found.\n"
 msgstr "Nom d'utilisateur introuvable.\n"
 
+#: winerror.mc:3741
+#, fuzzy
+#| msgid "The site does not exist.\n"
+msgid "This network connection does not exist.\n"
+msgstr "Le site n'existe pas.\n"
+
 #: localspl.rc:28 localui.rc:28 winspool.rc:27
 msgid "Local Port"
 msgstr "Port local"
@@ -6695,7 +6701,7 @@ msgstr "Réseau entier"
 msgid "Sound Selection"
 msgstr "Sélection du son"
 
-#: msacm32.rc:36 winedbg.rc:73
+#: msacm32.rc:36 winedbg.rc:68
 msgid "&Save As..."
 msgstr "&Enregistrer sous..."
 
@@ -13531,37 +13537,38 @@ msgstr ""
 "Le programme %s a rencontré un problème sérieux et doit être fermé. Nous "
 "somme désolés pour le désagrément subi."
 
-#: winedbg.rc:55
+#: winedbg.rc:53
 msgid ""
 "This can be caused by a problem in the program or a deficiency in Wine. You "
-"may want to check the <a href=\"http://appdb.winehq.org\">Application "
-"Database</a> for tips about running this application."
+"may want to check <a href=\"http://www.codeweavers.com/compatibility/"
+"\">http://www.codeweavers.com/compatibility/</a> for tips about running this "
+"application."
 msgstr ""
 "Cela peut être causé par une erreur dans le programme ou un défaut dans "
-"Wine. Vous pouvez consulter la <a href=\"http://appdb.winehq.org\">base de "
-"données d'applications</a> pour obtenir des conseils sur la façon d'exécuter "
-"cette application."
+"Wine. Vous pouvez consulter <a href=\"http://www.codeweavers.com/"
+"compatibility/\">http://www.codeweavers.com/compatibility/</a> pour obtenir "
+"des conseils sur la façon d'exécuter cette application."
 
-#: winedbg.rc:58
+#: winedbg.rc:56
 msgid "Show &Details"
 msgstr "Afficher les &détails"
 
-#: winedbg.rc:63
+#: winedbg.rc:61
 msgid "Program Error Details"
 msgstr "Détails de l'erreur du programme"
 
-#: winedbg.rc:70
+#: winedbg.rc:65
 msgid ""
 "If this problem is not present under Windows and has not been reported yet, "
 "you can save the detailed information to a file using the \"Save As\" "
-"button, then <a href=\"http://wiki.winehq.org/Bugs\">file a bug report</a> "
-"and attach that file to the report."
+"button, then <a href=\"http://www.codeweavers.com/support/tickets/enter/"
+"\">file a bug report</a> and attach that file to the report."
 msgstr ""
 "Si ce problème ne se produit pas sous Windows et n'a pas déjà été rapporté, "
 "vous pouvez enregistrer les informations détaillées dans un fichier en "
-"utilisant le bouton « Enregistrer sous », et ensuite  <a href=\"http://wiki."
-"winehq.org/Bugs\">soumettre un rapport d'anomalie</a> en y attachant ledit "
-"fichier."
+"utilisant le bouton « Enregistrer sous », et ensuite  <a href=\"http://www."
+"codeweavers.com/support/tickets/enter/\">soumettre un rapport d'anomalie</a> "
+"en y attachant ledit fichier."
 
 #: winedbg.rc:35
 msgid "Wine program crash"

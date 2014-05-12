@@ -101,7 +101,12 @@ static BOOL process_attach( HMODULE module )
         /* Securom checks for this one when version is NT */
         set_entry_point( module, "FT_Thunk", 0 );
     }
-    else LoadLibraryA( "krnl386.exe16" );
+    else
+    {
+        /* Codeweavers hack: native crypt32 installed by IE6 is buggy (bug 5259) */
+        set_entry_point( module, "RegisterWaitForSingleObjectEx", 0 );
+        LoadLibraryA( "krnl386.exe16" );
+    }
 
     /* finish the process initialisation for console bits, if needed */
     __wine_set_signal_handler(SIGINT, CONSOLE_HandleCtrlC);

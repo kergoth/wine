@@ -805,6 +805,18 @@ static void X11DRV_FocusOut( HWND hwnd, XEvent *xev )
             SetForegroundWindow( GetDesktopWindow() );
         }
     }
+    if (forcealtrelease && GetAsyncKeyState(VK_MENU)<0)
+    {
+      INPUT fake_alt_release;
+      fake_alt_release.type = INPUT_KEYBOARD;
+      fake_alt_release.u.ki.wVk = VK_MENU;
+      fake_alt_release.u.ki.wScan = 0;
+      fake_alt_release.u.ki.dwFlags = KEYEVENTF_KEYUP;
+      fake_alt_release.u.ki.time = GetTickCount(); /* is it really this kind of timestamp ? */
+      fake_alt_release.u.ki.dwExtraInfo = 0;
+      SendInput(1, &fake_alt_release, sizeof(INPUT));
+    }
+
 }
 
 
@@ -1598,6 +1610,7 @@ static void EVENT_DropURLs( HWND hWnd, XClientMessageEvent *event )
  */
 static void handle_xembed_protocol( HWND hwnd, XClientMessageEvent *event )
 {
+    XEvent xev;
     struct x11drv_win_data *data = get_win_data( hwnd );
 
     if (!data) return;
@@ -1607,6 +1620,23 @@ static void handle_xembed_protocol( HWND hwnd, XClientMessageEvent *event )
     case XEMBED_EMBEDDED_NOTIFY:
         TRACE( "win %p/%lx XEMBED_EMBEDDED_NOTIFY owner %lx\n", hwnd, event->window, event->data.l[3] );
         data->embedder = event->data.l[3];
+        break;
+    case XEMBED_WINDOW_ACTIVATE:
+        TRACE( "win %p/%lx XEMBED_WINDOW_ACTIVATE\n", hwnd, event->window );
+        if (!data->embedder) break;
+        xev.xclient.type = ClientMessage;
+        xev.xclient.window = data->whole_window;
+        xev.xclient.message_type = x11drv_atom(_XEMBED);
+        xev.xclient.serial = 0;
+        xev.xclient.display = event->display;
+        xev.xclient.send_event = True;
+        xev.xclient.format = 32;
+        xev.xclient.data.l[0] = event->data.l[0];
+        xev.xclient.data.l[1] = XEMBED_REQUEST_FOCUS;
+        xev.xclient.data.l[2] = 0;
+        xev.xclient.data.l[3] = 0;
+        xev.xclient.data.l[4] = 0;
+        XSendEvent( event->display, data->embedder, False, SubstructureNotifyMask, &xev );
         break;
     default:
         TRACE( "win %p/%lx XEMBED message %lu(%lu)\n",

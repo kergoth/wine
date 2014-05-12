@@ -358,6 +358,11 @@ static inline NSUInteger adjusted_modifiers_for_option_behavior(NSUInteger modif
         [[self inputContext] discardMarkedText];
     }
 
+    - (NSFocusRingType) focusRingType
+    {
+        return NSFocusRingTypeNone;
+    }
+
     /*
      * ---------- NSTextInputClient methods ----------
      */
@@ -641,6 +646,7 @@ static inline NSUInteger adjusted_modifiers_for_option_behavior(NSUInteger modif
 
         if (newStyle != currentStyle)
         {
+            NSString* title = [[[self title] copy] autorelease];
             BOOL showingButtons = (currentStyle & (NSClosableWindowMask | NSMiniaturizableWindowMask | NSResizableWindowMask)) != 0;
             BOOL shouldShowButtons = (newStyle & (NSClosableWindowMask | NSMiniaturizableWindowMask | NSResizableWindowMask)) != 0;
             if (shouldShowButtons != showingButtons && !((newStyle ^ currentStyle) & NSClosableWindowMask))
@@ -654,6 +660,9 @@ static inline NSUInteger adjusted_modifiers_for_option_behavior(NSUInteger modif
             }
             [self setStyleMask:newStyle];
             [self adjustFullScreenBehavior:[self collectionBehavior]];
+
+            if ([[self title] length] == 0 && [title length] > 0)
+                [self setTitle:title];
         }
 
         [self adjustFeaturesForState];
@@ -1423,6 +1432,8 @@ static inline NSUInteger adjusted_modifiers_for_option_behavior(NSUInteger modif
 
         if ([menuItem action] == @selector(makeKeyAndOrderFront:))
             ret = [self isKeyWindow] || (!self.disabled && !self.noActivate);
+        else if ([menuItem action] == @selector(undo:)) // CrossOver Hack 10912: Mac Edit menu
+            ret = TRUE;
         if ([menuItem action] == @selector(toggleFullScreen:) && self.disabled)
             ret = NO;
 
@@ -1451,6 +1462,69 @@ static inline NSUInteger adjusted_modifiers_for_option_behavior(NSUInteger modif
             [[self firstResponder] keyDown:event];
         else
             [super sendEvent:event];
+    }
+
+    // CrossOver Hack 10912: Mac Edit menu
+    - (void) sendEditMenuCommand:(int)command
+    {
+        macdrv_event* event;
+        NSTimeInterval now = [[NSProcessInfo processInfo] systemUptime];
+
+        if (mac_edit_menu == MAC_EDIT_MENU_DISABLED) // Shouldn't get here
+        {
+            ERR(@"The Mac Edit menu is supposed to be disabled\n");
+            NSBeep();
+            return;
+        }
+
+        event = macdrv_create_event(EDIT_MENU_COMMAND, self);
+        event->edit_menu_command.command = command;
+        event->edit_menu_command.time_ms = [[WineApplicationController sharedController] ticksForEventTime:now];
+
+        [queue postEvent:event];
+
+        macdrv_release_event(event);
+
+        // This is an even grosser hack than the rest of the support for the Edit
+        // menu.  We are deliberately leaving ourselves with an incorrect notion
+        // of the current modifier key state (for the case where the user used a
+        // Command-key shortcut to invoke an Edit menu item).  Both Wine and this
+        // class pretend that Command/Alt are not pressed so that, when the user
+        // actually releases the key, it doesn't put focus on the menu bar.  If
+        // the user keeps Command pressed and types another key, we'll think that
+        // Command was newly pressed and generate the appropriate event to get
+        // everybody back in sync.
+        lastModifierFlags &= ~(NX_COMMANDMASK | NX_DEVICELCMDKEYMASK | NX_DEVICERCMDKEYMASK);
+    }
+
+    - (void) copy:(id)sender
+    {
+        [self sendEditMenuCommand:EDIT_COMMAND_COPY];
+    }
+
+    - (void) cut:(id)sender
+    {
+        [self sendEditMenuCommand:EDIT_COMMAND_CUT];
+    }
+
+    - (void) delete:(id)sender
+    {
+        [self sendEditMenuCommand:EDIT_COMMAND_DELETE];
+    }
+
+    - (void) paste:(id)sender
+    {
+        [self sendEditMenuCommand:EDIT_COMMAND_PASTE];
+    }
+
+    - (void) selectAll:(id)sender
+    {
+        [self sendEditMenuCommand:EDIT_COMMAND_SELECT_ALL];
+    }
+
+    - (void) undo:(id)sender
+    {
+        [self sendEditMenuCommand:EDIT_COMMAND_UNDO];
     }
 
     - (void) miniaturize:(id)sender
@@ -1567,6 +1641,19 @@ static inline NSUInteger adjusted_modifiers_for_option_behavior(NSUInteger modif
 
 
     /*
+     * ---------- NSObject method overrides ----------
+     */
+    // CrossOver Hack 10912: Mac Edit menu
+    - (BOOL) respondsToSelector:(SEL)selector
+    {
+        if (mac_edit_menu == MAC_EDIT_MENU_DISABLED && [[WineApplicationController sharedController] isEditMenuAction:selector])
+             return FALSE;
+
+        return [super respondsToSelector:selector];
+    }
+
+
+    /*
      * ---------- NSWindowDelegate methods ----------
      */
     - (NSSize) window:(NSWindow*)window willUseFullScreenContentSize:(NSSize)proposedSize
@@ -1630,12 +1717,9 @@ static inline NSUInteger adjusted_modifiers_for_option_behavior(NSUInteger modif
 
     - (void) windowDidEndLiveResize:(NSNotification *)notification
     {
-        macdrv_query* query = macdrv_create_query();
-        query->type = QUERY_RESIZE_END;
-        query->window = (macdrv_window)[self retain];
-
-        [self.queue query:query timeout:0.3];
-        macdrv_release_query(query);
+        macdrv_event* event = macdrv_create_event(WINDOW_RESIZE_ENDED, self);
+        [queue postEvent:event];
+        macdrv_release_event(event);
 
         self.liveResizeDisplayTimer = nil;
     }
@@ -1709,6 +1793,7 @@ static inline NSUInteger adjusted_modifiers_for_option_behavior(NSUInteger modif
         event = macdrv_create_event(WINDOW_FRAME_CHANGED, self);
         event->window_frame_changed.frame = NSRectToCGRect(frame);
         event->window_frame_changed.fullscreen = ([self styleMask] & NSFullScreenWindowMask) != 0;
+        event->window_frame_changed.in_resize = [self inLiveResize];
         [queue postEvent:event];
         macdrv_release_event(event);
 

@@ -3107,7 +3107,10 @@ void WINAPI CoFreeUnusedLibrariesEx(DWORD dwUnloadDelay, DWORD dwReserved)
         return;
     }
 
-    apartment_freeunusedlibraries(apt, dwUnloadDelay);
+    /* CODEWEAVERS HACK for Office 2003: Don't call
+     * apartment_freeunusedlibraries as it appears to do something the app
+     * doesn't expect and free a module that is in-use */
+    if (0) apartment_freeunusedlibraries(apt, dwUnloadDelay);
 }
 
 /***********************************************************************

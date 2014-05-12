@@ -117,6 +117,22 @@ enum {
     TOPMOST_FLOAT_INACTIVE_ALL,
 };
 
+/* CrossOver Hack 10912: Mac Edit menu */
+enum {
+    MAC_EDIT_MENU_DISABLED,
+    MAC_EDIT_MENU_BY_MESSAGE,
+    MAC_EDIT_MENU_BY_KEY,
+};
+
+enum {
+    EDIT_COMMAND_COPY,
+    EDIT_COMMAND_CUT,
+    EDIT_COMMAND_DELETE,
+    EDIT_COMMAND_PASTE,
+    EDIT_COMMAND_SELECT_ALL,
+    EDIT_COMMAND_UNDO,
+};
+
 enum {
     MACDRV_HOTKEY_SUCCESS,
     MACDRV_HOTKEY_ALREADY_REGISTERED,
@@ -143,13 +159,15 @@ struct macdrv_display {
 extern int macdrv_err_on;
 extern int topmost_float_inactive DECLSPEC_HIDDEN;
 extern int capture_displays_for_fullscreen DECLSPEC_HIDDEN;
+/* CrossOver Hack 10912: Mac Edit menu */
+extern int mac_edit_menu DECLSPEC_HIDDEN;
 extern int left_option_is_alt DECLSPEC_HIDDEN;
 extern int right_option_is_alt DECLSPEC_HIDDEN;
 
 extern int macdrv_start_cocoa_app(unsigned long long tickcount) DECLSPEC_HIDDEN;
 extern void macdrv_window_rejected_focus(const struct macdrv_event *event) DECLSPEC_HIDDEN;
 extern void macdrv_beep(void) DECLSPEC_HIDDEN;
-extern void macdrv_set_application_icon(CFArrayRef images) DECLSPEC_HIDDEN;
+extern void macdrv_set_application_icon(CFArrayRef images, CFURLRef url) DECLSPEC_HIDDEN;
 extern void macdrv_quit_reply(int reply) DECLSPEC_HIDDEN;
 extern int macdrv_using_input_method(void) DECLSPEC_HIDDEN;
 extern void macdrv_set_mouse_capture_window(macdrv_window window) DECLSPEC_HIDDEN;
@@ -174,6 +192,7 @@ enum {
     APP_DEACTIVATED,
     APP_QUIT_REQUESTED,
     DISPLAYS_CHANGED,
+    EDIT_MENU_COMMAND, /* CrossOver Hack 10912: Mac Edit menu */
     HOTKEY_PRESS,
     IM_SET_TEXT,
     KEY_PRESS,
@@ -194,6 +213,7 @@ enum {
     WINDOW_GOT_FOCUS,
     WINDOW_LOST_FOCUS,
     WINDOW_MINIMIZE_REQUESTED,
+    WINDOW_RESIZE_ENDED,
     NUM_EVENT_TYPES
 };
 
@@ -218,6 +238,11 @@ typedef struct macdrv_event {
         struct {
             int activating;
         }                                           displays_changed;
+        /* CrossOver Hack 10912: Mac Edit menu */
+        struct {
+            int             command;
+            unsigned long   time_ms;
+        }                                           edit_menu_command;
         struct {
             unsigned int    vkey;
             unsigned int    mod_flags;
@@ -275,6 +300,7 @@ typedef struct macdrv_event {
         struct {
             CGRect  frame;
             int     fullscreen;
+            int     in_resize;
         }                                           window_frame_changed;
         struct {
             unsigned long   serial;
@@ -289,7 +315,6 @@ enum {
     QUERY_DRAG_OPERATION,
     QUERY_IME_CHAR_RECT,
     QUERY_PASTEBOARD_DATA,
-    QUERY_RESIZE_END,
     QUERY_RESIZE_START,
     QUERY_MIN_MAX_INFO,
     NUM_QUERY_TYPES

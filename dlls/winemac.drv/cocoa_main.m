@@ -70,6 +70,10 @@ static void run_cocoa_app(void* info)
     {
         [WineApplication sharedApplication];
         created_app = TRUE;
+
+        /* CrossOver hack 11196: Disable loading of input managers */
+        [[NSUserDefaults standardUserDefaults] registerDefaults:
+            [NSDictionary dictionaryWithObject:@"NO" forKey:@"NSUseCocoaInputServers"]];
     }
 
     if ([NSApp respondsToSelector:@selector(setWineController:)])

@@ -245,7 +245,7 @@ static void check_and_store_certs(HCERTSTORE from, HCERTSTORE to)
     TRACE("\n");
 
     CertDuplicateStore(to);
-    engine = CRYPT_CreateChainEngine(to, &chainEngineConfig);
+    engine = CRYPT_CreateChainEngine(to, CERT_SYSTEM_STORE_CURRENT_USER, &chainEngineConfig);
     if (engine)
     {
         PCCERT_CONTEXT cert = NULL;
@@ -486,6 +486,7 @@ static const char * const CRYPT_knownLocations[] = {
  "/etc/ssl/certs/ca-certificates.crt",
  "/etc/ssl/certs",
  "/etc/pki/tls/certs/ca-bundle.crt",
+ "/usr/share/ca-certificates/ca-bundle.crt",
  "/usr/local/share/certs/",
  "/etc/sfw/openssl/certs",
 };
@@ -832,7 +833,7 @@ WINECRYPT_CERTSTORE *CRYPT_RootOpenStore(HCRYPTPROV hCryptProv, DWORD dwFlags)
         if (CRYPT_rootStore != root)
             CertCloseStore(root, 0);
     }
-    CertDuplicateStore(CRYPT_rootStore);
+    CRYPT_rootStore->vtbl->addref(CRYPT_rootStore);
     return CRYPT_rootStore;
 }
 

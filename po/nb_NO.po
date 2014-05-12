@@ -5,7 +5,7 @@ msgstr ""
 "Project-Id-Version: Wine\n"
 "Report-Msgid-Bugs-To: http://bugs.winehq.org\n"
 "POT-Creation-Date: N/A\n"
-"PO-Revision-Date: N/A\n"
+"PO-Revision-Date: 2014-02-07 13:44-0600\n"
 "Last-Translator: Automatically generated\n"
 "Language-Team: none\n"
 "Language: Norwegian Bokmål\n"
@@ -388,8 +388,8 @@ msgctxt "hotkey"
 msgid "None"
 msgstr "Ingen"
 
-#: comctl32.rc:28 cryptui.rc:227 regedit.rc:234 taskmgr.rc:434 winedbg.rc:57
-#: winedbg.rc:72 wordpad.rc:169
+#: comctl32.rc:28 cryptui.rc:227 regedit.rc:234 taskmgr.rc:434 winedbg.rc:55
+#: winedbg.rc:67 wordpad.rc:169
 msgid "Close"
 msgstr "Lukk"
 
@@ -5179,7 +5179,7 @@ msgstr "Operasjonen ble avbrutt av brukeren.\n"
 msgid "File has a user-mapped section.\n"
 msgstr "En del av filen er tilordnet brukeren.\n"
 
-#: winerror.mc:1756 winerror.mc:3741
+#: winerror.mc:1756 winerror.mc:3746
 msgid "Connection refused.\n"
 msgstr "Tilkobling nektet.\n"
 
@@ -6825,6 +6825,12 @@ msgstr "Brukernavnet finnes ikke.\n"
 msgid "The username could not be found.\n"
 msgstr "Brukernavnet finnes ikke.\n"
 
+#: winerror.mc:3741
+#, fuzzy
+#| msgid "The site does not exist.\n"
+msgid "This network connection does not exist.\n"
+msgstr "Siden finnes ikke.\n"
+
 #: localspl.rc:28 localui.rc:28 winspool.rc:27
 msgid "Local Port"
 msgstr "Lokal port"
@@ -6905,7 +6911,7 @@ msgstr "Hele nettverket"
 msgid "Sound Selection"
 msgstr "Lydutvalg"
 
-#: msacm32.rc:36 winedbg.rc:73
+#: msacm32.rc:36 winedbg.rc:68
 msgid "&Save As..."
 msgstr "Lagre &som..."
 
@@ -13745,12 +13751,13 @@ msgstr ""
 "Programmet %s har fått et alvorlig problem og må avsluttes. Vi beklager det "
 "inntrufne."
 
-#: winedbg.rc:55
+#: winedbg.rc:53
 #, fuzzy
 msgid ""
 "This can be caused by a problem in the program or a deficiency in Wine. You "
-"may want to check the <a href=\"http://appdb.winehq.org\">Application "
-"Database</a> for tips about running this application."
+"may want to check <a href=\"http://www.codeweavers.com/compatibility/"
+"\">http://www.codeweavers.com/compatibility/</a> for tips about running this "
+"application."
 msgstr ""
 "Dette kan skyldes et problem i programmet eller en feil i Wine. Du kan "
 "besøke http://appdb.winehq.org for råd om hvordan du kan kjøre dette "
@@ -13759,22 +13766,22 @@ msgstr ""
 "Du kan rapportere feilen på http://bugs.winehq.org hvis problemet ikke "
 "oppstår i Windows."
 
-#: winedbg.rc:58
+#: winedbg.rc:56
 #, fuzzy
 msgid "Show &Details"
 msgstr "&Detaljer"
 
-#: winedbg.rc:63
+#: winedbg.rc:61
 #, fuzzy
 msgid "Program Error Details"
 msgstr "Programfeil"
 
-#: winedbg.rc:70
+#: winedbg.rc:65
 msgid ""
 "If this problem is not present under Windows and has not been reported yet, "
 "you can save the detailed information to a file using the \"Save As\" "
-"button, then <a href=\"http://wiki.winehq.org/Bugs\">file a bug report</a> "
-"and attach that file to the report."
+"button, then <a href=\"http://www.codeweavers.com/support/tickets/enter/"
+"\">file a bug report</a> and attach that file to the report."
 msgstr ""
 
 #: winedbg.rc:35

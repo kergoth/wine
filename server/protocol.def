@@ -2464,6 +2464,7 @@ enum message_type
     user_handle_t  previous;      /* previous window in Z order */
     rectangle_t    window;        /* window rectangle (in parent coords) */
     rectangle_t    client;        /* client rectangle (in parent coords) */
+    obj_handle_t   surface;       /* handle to the surface mapping object */
     VARARG(valid,rectangles);     /* valid rectangles from WM_NCCALCSIZE (in parent coords) */
 @REPLY
     unsigned int   new_style;     /* new window style */
@@ -2522,6 +2523,7 @@ enum coords_relative
     user_handle_t  window;        /* handle to the window */
     unsigned int   flags;         /* DCX flags */
 @REPLY
+    obj_handle_t   surface;       /* handle to the surface memory mapping */
     user_handle_t  top_win;       /* top window to clip against */
     rectangle_t    top_rect;      /* top window visible rect with screen coords */
     rectangle_t    win_rect;      /* window rect in screen coords */
@@ -2699,6 +2701,16 @@ enum coords_relative
     unsigned int access;          /* wanted access rights */
     unsigned int attributes;      /* object attributes */
     VARARG(name,unicode_str);     /* object name */
+@REPLY
+    obj_handle_t handle;          /* handle to the desktop */
+@END
+
+
+/* Open a handle to current input desktop */
+@REQ(open_input_desktop)
+    unsigned int flags;           /* desktop flags */
+    unsigned int access;          /* wanted access rights */
+    unsigned int attributes;      /* object attributes */
 @REPLY
     obj_handle_t handle;          /* handle to the desktop */
 @END

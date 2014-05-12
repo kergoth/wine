@@ -1852,6 +1852,14 @@ static RECT *x11drv_surface_get_bounds( struct window_surface *window_surface )
 }
 
 /***********************************************************************
+ *           x11drv_surface_get_mapping
+ */
+static HANDLE x11drv_surface_get_mapping( struct window_surface *window_surface )
+{
+    return 0;
+}
+
+/***********************************************************************
  *           x11drv_surface_set_region
  */
 static void x11drv_surface_set_region( struct window_surface *window_surface, HRGN region )
@@ -1978,6 +1986,7 @@ static const struct window_surface_funcs x11drv_surface_funcs =
     x11drv_surface_unlock,
     x11drv_surface_get_bitmap_info,
     x11drv_surface_get_bounds,
+    x11drv_surface_get_mapping,
     x11drv_surface_set_region,
     x11drv_surface_flush,
     x11drv_surface_destroy

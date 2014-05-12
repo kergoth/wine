@@ -5,7 +5,7 @@ msgstr ""
 "Project-Id-Version: Wine\n"
 "Report-Msgid-Bugs-To: http://bugs.winehq.org\n"
 "POT-Creation-Date: N/A\n"
-"PO-Revision-Date: 2013-06-28 01:08+0200\n"
+"PO-Revision-Date: 2014-02-07 13:46-0600\n"
 "Last-Translator: Michael Stefaniuc <mstefani@redhat.de>\n"
 "Language: Romanian\n"
 "MIME-Version: 1.0\n"
@@ -374,8 +374,8 @@ msgctxt "hotkey"
 msgid "None"
 msgstr "Nespecificat"
 
-#: comctl32.rc:28 cryptui.rc:227 regedit.rc:234 taskmgr.rc:434 winedbg.rc:57
-#: winedbg.rc:72 wordpad.rc:169
+#: comctl32.rc:28 cryptui.rc:227 regedit.rc:234 taskmgr.rc:434 winedbg.rc:55
+#: winedbg.rc:67 wordpad.rc:169
 msgid "Close"
 msgstr "Închide"
 
@@ -5067,7 +5067,7 @@ msgstr "Operația a fost anulată de utilizator.\n"
 msgid "File has a user-mapped section.\n"
 msgstr ""
 
-#: winerror.mc:1756 winerror.mc:3741
+#: winerror.mc:1756 winerror.mc:3746
 msgid "Connection refused.\n"
 msgstr "Conexiune refuzată.\n"
 
@@ -6797,6 +6797,11 @@ msgstr "'%s' nu a fost găsit."
 msgid "The username could not be found.\n"
 msgstr "'%s' nu a fost găsit."
 
+#: winerror.mc:3741
+#, fuzzy
+msgid "This network connection does not exist.\n"
+msgstr "Fișierul nu există.\n"
+
 #: localspl.rc:28 localui.rc:28 winspool.rc:27
 msgid "Local Port"
 msgstr "Port local"
@@ -6878,7 +6883,7 @@ msgstr "Toată rețeaua"
 msgid "Sound Selection"
 msgstr "Selecție sunet"
 
-#: msacm32.rc:36 winedbg.rc:73
+#: msacm32.rc:36 winedbg.rc:68
 msgid "&Save As..."
 msgstr "&Salvează ca..."
 
@@ -13574,30 +13579,32 @@ msgstr ""
 "Programul %s a întâmpinat o problemă gravă și trebuie să se închidă. Ne "
 "cerem scuze pentru neplăcerile create."
 
-#: winedbg.rc:55
+#: winedbg.rc:53
 msgid ""
 "This can be caused by a problem in the program or a deficiency in Wine. You "
-"may want to check the <a href=\"http://appdb.winehq.org\">Application "
-"Database</a> for tips about running this application."
+"may want to check <a href=\"http://www.codeweavers.com/compatibility/"
+"\">http://www.codeweavers.com/compatibility/</a> for tips about running this "
+"application."
 msgstr ""
 "Cauza poate fi o problemă în program sau o deficiență în Wine. Puteți "
-"consulta http://appdb.winehq.org pentru sugestii privind executarea acestei "
-"aplicații."
+"consulta <a href=\"http://www.codeweavers.com/compatibility/\">http://www."
+"codeweavers.com/compatibility/</a> pentru sugestii privind executarea "
+"acestei aplicații."
 
-#: winedbg.rc:58
+#: winedbg.rc:56
 msgid "Show &Details"
 msgstr "Afișează &detalii"
 
-#: winedbg.rc:63
+#: winedbg.rc:61
 msgid "Program Error Details"
 msgstr "Detalii eroare de program"
 
-#: winedbg.rc:70
+#: winedbg.rc:65
 msgid ""
 "If this problem is not present under Windows and has not been reported yet, "
 "you can save the detailed information to a file using the \"Save As\" "
-"button, then <a href=\"http://wiki.winehq.org/Bugs\">file a bug report</a> "
-"and attach that file to the report."
+"button, then <a href=\"http://www.codeweavers.com/support/tickets/enter/"
+"\">file a bug report</a> and attach that file to the report."
 msgstr ""
 
 #: winedbg.rc:35

@@ -48,6 +48,7 @@ typedef struct _TABLE_SLOT
 
 typedef struct _STRING_TABLE
 {
+    DWORD dummy;
     PTABLE_SLOT pSlots;
     DWORD dwUsedSlots;
     DWORD dwMaxSlots;

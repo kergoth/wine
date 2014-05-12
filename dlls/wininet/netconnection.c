@@ -62,6 +62,13 @@
 #ifdef HAVE_NETINET_TCP_H
 # include <netinet/tcp.h>
 #endif
+#ifdef HAVE_LINUX_NETLINK_H
+# include <linux/netlink.h>
+# include <linux/rtnetlink.h>
+#endif
+#ifdef HAVE_SYS_KERN_EVENT_H
+# include <sys/kern_event.h>
+#endif
 
 #include <stdarg.h>
 #include <stdlib.h>
@@ -88,6 +95,67 @@
 
 
 WINE_DEFAULT_DEBUG_CHANNEL(wininet);
+
+static int netconn_send(netconn_t *conn, const void *buf, size_t len, int flags)
+{
+#if defined(HAVE_LINUX_NETLINK_H) || defined(HAVE_SYS_KERN_EVENT_H)
+    if (!(flags & MSG_DONTWAIT) && conn->event_socket != -1)
+    {
+        struct pollfd pfds[2];
+        int res;
+
+        pfds[0].fd = conn->socket;
+        pfds[0].events = POLLOUT | POLLERR | POLLHUP;
+        pfds[1].fd = conn->event_socket;
+        pfds[1].events = POLLIN;
+        res = poll(pfds, 2, -1);
+        if (res > 0)
+        {
+            if (pfds[0].revents & (POLLERR | POLLHUP)) return -1;
+            if (pfds[1].revents & POLLIN)
+            {
+                WARN("network change\n");
+                closesocket(conn->event_socket);
+                conn->event_socket = -1;
+                closesocket(conn->socket);
+                conn->socket = -1;
+                errno = ECONNRESET;
+                return -1;
+            }
+        }
+    }
+#endif
+    return send(conn->socket, buf, len, flags);
+}
+
+static int netconn_recv(netconn_t *conn, void *buf, size_t len, int flags)
+{
+#if defined(HAVE_LINUX_NETLINK_H) || defined(HAVE_SYS_KERN_EVENT_H)
+    if (!(flags & MSG_DONTWAIT) && conn->event_socket != -1)
+    {
+        struct pollfd pfds[2];
+        int res;
+
+        pfds[0].fd = conn->socket;
+        pfds[0].events = POLLIN;
+        pfds[1].fd = conn->event_socket;
+        pfds[1].events = POLLIN;
+        res = poll(pfds, 2, -1);
+        if (res > 0 && pfds[1].revents & POLLIN)
+        {
+            WARN("network change\n");
+            closesocket(conn->event_socket);
+            conn->event_socket = -1;
+            closesocket(conn->socket);
+            conn->socket = -1;
+            errno = ECONNRESET;
+            return -1;
+        }
+        else if (res == -1 && errno != EINTR) return -1;
+    }
+#endif
+    return recv(conn->socket, buf, len, flags);
+}
 
 /* FIXME!!!!!!
  *    This should use winsock - To use winsock the functions will have to change a bit
@@ -231,6 +299,24 @@ static DWORD netconn_verify_cert(netconn_t *conn, PCCERT_CONTEXT cert, HCERTSTOR
         }
     }
 
+    if (err) /* CrossOver hack tracked by bug 6776 */
+    {
+        HKEY hkey;
+        DWORD type, value, size = sizeof(value);
+
+        /* @@ Wine registry key: HKCU\Software\Wine\wininet */
+        if (!RegOpenKeyA( HKEY_CURRENT_USER, "Software\\Wine\\wininet", &hkey ))
+        {
+            if (!RegQueryValueExA( hkey, "accept_invalid_certs", 0, &type, (BYTE *)&value, &size ) &&
+                type == REG_DWORD && value)
+            {
+                WARN("certificate is invalid, accepting it anyway\n");
+                err = ERROR_SUCCESS;
+            }
+            RegCloseKey( hkey );
+        }
+    }
+
     if(err) {
         WARN("failed %u\n", err);
         CertFreeCertificateChain(chain);
@@ -298,6 +384,74 @@ static BOOL ensure_cred_handle(void)
     return TRUE;
 }
 
+/* CrossOver hack tracked by bug 10679 */
+static BOOL is_outlook(void)
+{
+    static const WCHAR olW[] = {'\\','o','u','t','l','o','o','k','.','e','x','e',0};
+    WCHAR path[MAX_PATH];
+    DWORD len1 = sizeof(olW)/sizeof(olW[0]) - 1, len2 = GetModuleFileNameW( NULL, path, MAX_PATH );
+    if (len2 >= len1 && !strcmpiW( path + len2 - len1, olW )) return TRUE;
+    return FALSE;
+}
+
+int create_event_socket(void)
+{
+    int ret = -1;
+
+    if (!is_outlook()) return -1;
+
+#if defined(HAVE_LINUX_NETLINK_H)
+    if ((ret = socket(AF_NETLINK, SOCK_RAW, NETLINK_ROUTE)) >= 0)
+    {
+        struct sockaddr_nl src_addr, dst_addr;
+
+        memset(&src_addr, 0, sizeof(src_addr));
+        src_addr.nl_family = AF_NETLINK;
+        src_addr.nl_groups = RTMGRP_IPV4_IFADDR | RTMGRP_IPV6_IFADDR;
+
+        if (bind(ret, (struct sockaddr *)&src_addr, sizeof(src_addr)) >= 0)
+        {
+            struct nlmsghdr nlh;
+            struct iovec iov;
+            struct msghdr msg;
+
+            nlh.nlmsg_len   = sizeof(nlh);
+            nlh.nlmsg_type  = NLM_F_REQUEST;
+            nlh.nlmsg_flags = 0;
+
+            iov.iov_base = (void *)&nlh;
+            iov.iov_len  = nlh.nlmsg_len;
+
+            memset(&dst_addr, 0, sizeof(dst_addr));
+            dst_addr.nl_family = AF_NETLINK;
+
+            msg.msg_name    = (void *)&dst_addr;
+            msg.msg_namelen = sizeof(dst_addr);
+            msg.msg_iov     = &iov;
+            msg.msg_iovlen  = 1;
+
+            sendmsg(ret, &msg, 0);
+        }
+    }
+#elif HAVE_SYS_KERN_EVENT_H
+    if ((ret = socket(PF_SYSTEM, SOCK_RAW, SYSPROTO_EVENT)) >= 0)
+    {
+        struct kev_request req;
+
+        req.vendor_code  = KEV_VENDOR_APPLE;
+        req.kev_class    = KEV_NETWORK_CLASS;
+        req.kev_subclass = KEV_ANY_SUBCLASS;
+
+        if (ioctl(ret, SIOCSKEVFILT, &req) == -1)
+        {
+            closesocket(ret);
+            return -1;
+        }
+    }
+#endif
+    return ret;
+}
+
 static DWORD create_netconn_socket(server_t *server, netconn_t *netconn, DWORD timeout)
 {
     int result;
@@ -348,7 +502,7 @@ static DWORD create_netconn_socket(server_t *server, netconn_t *netconn, DWORD t
     if(result < 0)
         WARN("setsockopt(TCP_NODELAY) failed\n");
 #endif
-
+    netconn->event_socket = create_event_socket();
     return ERROR_SUCCESS;
 }
 
@@ -395,7 +549,10 @@ void free_netconn(netconn_t *netconn)
         DeleteSecurityContext(&netconn->ssl_ctx);
     }
 
-    closesocket(netconn->socket);
+    if (netconn->socket != -1)
+        closesocket(netconn->socket);
+    if (netconn->event_socket != -1)
+        closesocket(netconn->event_socket);
     heap_free(netconn);
 }
 
@@ -517,7 +674,7 @@ static DWORD netcon_secure_connect_setup(netconn_t *connection, BOOL compat_mode
 
             TRACE("sending %u bytes\n", out_buf.cbBuffer);
 
-            size = send(connection->socket, out_buf.pvBuffer, out_buf.cbBuffer, 0);
+            size = netconn_send(connection, out_buf.pvBuffer, out_buf.cbBuffer, 0);
             if(size != out_buf.cbBuffer) {
                 ERR("send failed\n");
                 status = ERROR_INTERNET_SECURITY_CHANNEL_ERROR;
@@ -556,7 +713,7 @@ static DWORD netcon_secure_connect_setup(netconn_t *connection, BOOL compat_mode
             read_buf_size += 1024;
         }
 
-        size = recv(connection->socket, read_buf+in_bufs[0].cbBuffer, read_buf_size-in_bufs[0].cbBuffer, 0);
+        size = netconn_recv(connection, read_buf+in_bufs[0].cbBuffer, read_buf_size-in_bufs[0].cbBuffer, 0);
         if(size < 1) {
             WARN("recv error\n");
             res = ERROR_INTERNET_SECURITY_CHANNEL_ERROR;
@@ -688,7 +845,7 @@ static BOOL send_ssl_chunk(netconn_t *conn, const void *msg, size_t size)
         return FALSE;
     }
 
-    if(send(conn->socket, conn->ssl_buf, bufs[0].cbBuffer+bufs[1].cbBuffer+bufs[2].cbBuffer, 0) < 1) {
+    if(netconn_send(conn, conn->ssl_buf, bufs[0].cbBuffer+bufs[1].cbBuffer+bufs[2].cbBuffer, 0) < 1) {
         WARN("send failed\n");
         return FALSE;
     }
@@ -706,7 +863,7 @@ DWORD NETCON_send(netconn_t *connection, const void *msg, size_t len, int flags,
 {
     if(!connection->secure)
     {
-	*sent = send(connection->socket, msg, len, flags);
+	*sent = netconn_send(connection, msg, len, flags);
 	if (*sent == -1)
 	    return sock_get_error(errno);
         return ERROR_SUCCESS;
@@ -750,7 +907,7 @@ static BOOL read_ssl_chunk(netconn_t *conn, void *buf, SIZE_T buf_size, SIZE_T *
         heap_free(conn->extra_buf);
         conn->extra_buf = NULL;
     }else {
-        buf_len = recv(conn->socket, conn->ssl_buf+conn->extra_len, ssl_buf_size-conn->extra_len, 0);
+        buf_len = netconn_recv(conn, conn->ssl_buf+conn->extra_len, ssl_buf_size-conn->extra_len, 0);
         if(buf_len < 0) {
             WARN("recv failed\n");
             return FALSE;
@@ -782,7 +939,7 @@ static BOOL read_ssl_chunk(netconn_t *conn, void *buf, SIZE_T buf_size, SIZE_T *
         case SEC_E_INCOMPLETE_MESSAGE:
             assert(buf_len < ssl_buf_size);
 
-            size = recv(conn->socket, conn->ssl_buf+buf_len, ssl_buf_size-buf_len, 0);
+            size = netconn_recv(conn, conn->ssl_buf+buf_len, ssl_buf_size-buf_len, 0);
             if(size < 1)
                 return FALSE;
 
@@ -838,7 +995,7 @@ DWORD NETCON_recv(netconn_t *connection, void *buf, size_t len, int flags, int *
 
     if (!connection->secure)
     {
-	*recvd = recv(connection->socket, buf, len, flags);
+	*recvd = netconn_recv(connection, buf, len, flags);
 	return *recvd == -1 ? sock_get_error(errno) :  ERROR_SUCCESS;
     }
     else
@@ -920,7 +1077,7 @@ BOOL NETCON_is_alive(netconn_t *netconn)
     ssize_t len;
     BYTE b;
 
-    len = recv(netconn->socket, &b, 1, MSG_PEEK|MSG_DONTWAIT);
+    len = netconn_recv(netconn, &b, 1, MSG_PEEK|MSG_DONTWAIT);
     return len == 1 || (len == -1 && errno == EWOULDBLOCK);
 #elif defined(__MINGW32__) || defined(_MSC_VER)
     ULONG mode;

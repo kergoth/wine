@@ -94,6 +94,8 @@ static inline int set_thread_area( struct modify_ldt_s *ptr )
 
 #ifdef __APPLE__
 #include <i386/user_ldt.h>
+#include <pthread.h>
+static pthread_mutex_t ldt_mutex = PTHREAD_MUTEX_INITIALIZER;
 #endif
 
 /* local copy of the LDT */
@@ -201,8 +203,10 @@ static int internal_set_entry( unsigned short sel, const LDT_ENTRY *entry )
         if ((ret = sysi86(SI86DSCR, &ldt_mod)) == -1) perror("sysi86");
     }
 #elif defined(__APPLE__)
+    pthread_mutex_lock(&ldt_mutex);
     if ((ret = i386_set_ldt(index, (union ldt_entry *)entry, 1)) < 0)
         perror("i386_set_ldt");
+    pthread_mutex_unlock(&ldt_mutex);
 #else
     fprintf( stderr, "No LDT support on this platform\n" );
     exit(1);

@@ -465,6 +465,24 @@ LPTOP_LEVEL_EXCEPTION_FILTER WINAPI SetUnhandledExceptionFilter(
                                           LPTOP_LEVEL_EXCEPTION_FILTER filter )
 {
     LPTOP_LEVEL_EXCEPTION_FILTER old = top_filter;
+
+    if(1)
+    {
+        static const WCHAR gw2exe[] = {'g','w','2','.','e','x','e',0};
+        WCHAR *p, procname[MAX_PATH];
+
+        if (GetModuleFileNameW( 0, procname, MAX_PATH ) < MAX_PATH)
+        {
+            if ((p = strrchrW( procname, '\\' ))) p++;
+            else p = procname;
+            if (!strcmpiW( p, gw2exe ))
+            {
+                TRACE("Refusing to install exception handler for Guild Wars 2.\n");
+                return old;
+            }
+        }
+    }
+
     top_filter = filter;
     return old;
 }

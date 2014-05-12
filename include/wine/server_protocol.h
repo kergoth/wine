@@ -3411,7 +3411,9 @@ struct set_window_pos_request
     user_handle_t  previous;
     rectangle_t    window;
     rectangle_t    client;
+    obj_handle_t   surface;
     /* VARARG(valid,rectangles); */
+    char __pad_60[4];
 };
 struct set_window_pos_reply
 {
@@ -3503,13 +3505,13 @@ struct get_visible_region_request
 struct get_visible_region_reply
 {
     struct reply_header __header;
+    obj_handle_t   surface;
     user_handle_t  top_win;
     rectangle_t    top_rect;
     rectangle_t    win_rect;
     unsigned int   paint_flags;
     data_size_t    total_size;
     /* VARARG(region,rectangles); */
-    char __pad_52[4];
 };
 
 
@@ -3793,6 +3795,22 @@ struct open_desktop_request
     char __pad_28[4];
 };
 struct open_desktop_reply
+{
+    struct reply_header __header;
+    obj_handle_t handle;
+    char __pad_12[4];
+};
+
+
+
+struct open_input_desktop_request
+{
+    struct request_header __header;
+    unsigned int flags;
+    unsigned int access;
+    unsigned int attributes;
+};
+struct open_input_desktop_reply
 {
     struct reply_header __header;
     obj_handle_t handle;
@@ -5230,6 +5248,7 @@ enum request
     REQ_enum_winstation,
     REQ_create_desktop,
     REQ_open_desktop,
+    REQ_open_input_desktop,
     REQ_close_desktop,
     REQ_get_thread_desktop,
     REQ_set_thread_desktop,
@@ -5490,6 +5509,7 @@ union generic_request
     struct enum_winstation_request enum_winstation_request;
     struct create_desktop_request create_desktop_request;
     struct open_desktop_request open_desktop_request;
+    struct open_input_desktop_request open_input_desktop_request;
     struct close_desktop_request close_desktop_request;
     struct get_thread_desktop_request get_thread_desktop_request;
     struct set_thread_desktop_request set_thread_desktop_request;
@@ -5748,6 +5768,7 @@ union generic_reply
     struct enum_winstation_reply enum_winstation_reply;
     struct create_desktop_reply create_desktop_reply;
     struct open_desktop_reply open_desktop_reply;
+    struct open_input_desktop_reply open_input_desktop_reply;
     struct close_desktop_reply close_desktop_reply;
     struct get_thread_desktop_reply get_thread_desktop_reply;
     struct set_thread_desktop_reply set_thread_desktop_reply;
@@ -5823,6 +5844,6 @@ union generic_reply
     struct set_suspend_context_reply set_suspend_context_reply;
 };
 
-#define SERVER_PROTOCOL_VERSION 449
+#define SERVER_PROTOCOL_VERSION 451
 
 #endif /* __WINE_WINE_SERVER_PROTOCOL_H */

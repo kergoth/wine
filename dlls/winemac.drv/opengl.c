@@ -96,6 +96,7 @@ static struct opengl_funcs opengl_funcs;
 
 #define USE_GL_FUNC(name) #name,
 static const char *opengl_func_names[] = { ALL_WGL_FUNCS };
+static const char *glu_func_names[] = { ALL_GLU_FUNCS };
 #undef USE_GL_FUNC
 
 
@@ -618,6 +619,11 @@ static void enum_renderer_pixel_formats(renderer_properties renderer, CFMutableA
     {
         attribs[n++] = kCGLPFAAccelerated;
         attribs[n++] = kCGLPFANoRecovery;
+    }
+    else if (!allow_software_rendering)
+    {
+        TRACE("ignoring software renderer because AllowSoftwareRendering is off\n");
+        return;
     }
 
     n_stack[++n_stack_idx] = n;
@@ -3079,6 +3085,12 @@ static BOOL init_opengl(void)
             ERR("%s not found in OpenGL, disabling.\n", opengl_func_names[i]);
             goto failed;
         }
+    }
+
+    for (i = 0; i < sizeof(glu_func_names)/sizeof(glu_func_names[0]); i++)
+    {
+        if (!(((void **)&opengl_funcs.glu)[i] = wine_dlsym(opengl_handle, glu_func_names[i], NULL, 0)))
+            WARN("%s not found in OpenGL\n", glu_func_names[i]);
     }
 
     /* redirect some standard OpenGL functions */

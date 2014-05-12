@@ -1,0 +1,4 @@
+MODULE    = 32autole.dll
+IMPORTS   = oleaut32
+
+@MAKE_DLL_RULES@

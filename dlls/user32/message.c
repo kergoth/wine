@@ -2481,6 +2481,7 @@ static BOOL process_mouse_message( MSG *msg, UINT hw_id, ULONG_PTR extra_info, H
                                    UINT first, UINT last, BOOL remove )
 {
     static MSG clk_msg;
+    static int qw_hack_flag = 1;
 
     POINT pt;
     UINT message;
@@ -2489,6 +2490,45 @@ static BOOL process_mouse_message( MSG *msg, UINT hw_id, ULONG_PTR extra_info, H
     GUITHREADINFO info;
     MOUSEHOOKSTRUCT hook;
     BOOL eatMsg;
+
+    /* -----------------------------------------------------------
+    **   CodeWeavers Hack for bug 11459
+    ** ----------------------------------------------------------- */
+    if(qw_hack_flag == 1)
+    {
+        static const WCHAR qwexe[] = {'q','w','.','e','x','e',0};
+        WCHAR *p, procname[MAX_PATH];
+
+        qw_hack_flag = 0;
+
+        if (GetModuleFileNameW( 0, procname, MAX_PATH ) < MAX_PATH)
+        {
+            if ((p = strrchrW( procname, '\\' ))) p++;
+            else p = procname;
+            if (!strcmpiW( p, qwexe ))
+            {
+                HKEY hkey = 0;
+                char buffer[MAX_PATH+10];
+                DWORD size = sizeof(buffer);
+
+                if(RegOpenKeyA(HKEY_CURRENT_USER, "Software\\Wine\\user32", &hkey))
+                    hkey = 0;
+
+                if(hkey)
+                {
+                    if(RegQueryValueExA(hkey, "mouseToRootAncestor", 0, NULL, (BYTE *)buffer, &size) == ERROR_SUCCESS)            
+                    {
+                        if (!strcmp(buffer,"yes"))
+                        {
+                            TRACE("Sending mouse messages to root ancestor for Quicken.\n");
+                            qw_hack_flag = 2;
+                        }
+                    }
+                }
+                RegCloseKey(hkey);
+            }
+        }
+    }
 
     /* find the window to dispatch this mouse message to */
 
@@ -2633,11 +2673,14 @@ static BOOL process_mouse_message( MSG *msg, UINT hw_id, ULONG_PTR extra_info, H
         if (msg->hwnd != info.hwndActive)
         {
             HWND hwndTop = msg->hwnd;
-            while (hwndTop)
-            {
-                if ((GetWindowLongW( hwndTop, GWL_STYLE ) & (WS_POPUP|WS_CHILD)) != WS_CHILD) break;
-                hwndTop = GetParent( hwndTop );
-            }
+            if (qw_hack_flag)
+                hwndTop = GetAncestor(msg->hwnd, GA_ROOT);
+            else
+                while (hwndTop)
+                {
+                    if ((GetWindowLongW( hwndTop, GWL_STYLE ) & (WS_POPUP|WS_CHILD)) != WS_CHILD) break;
+                    hwndTop = GetParent( hwndTop );
+                }
 
             if (hwndTop && hwndTop != GetDesktopWindow())
             {
@@ -3417,6 +3460,12 @@ LRESULT WINAPI SendMessageA( HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam )
 {
     DWORD_PTR res = 0;
     struct send_message_info info;
+
+    /*------------------------------------------------------------------------
+    ** Hack for Shockwave.
+    **----------------------------------------------------------------------*/
+    if (msg == 0x9e0)
+        usleep(0);
 
     info.type    = MSG_ASCII;
     info.hwnd    = hwnd;

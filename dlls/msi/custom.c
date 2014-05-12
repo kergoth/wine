@@ -658,11 +658,29 @@ static UINT HANDLE_CustomType1( MSIPACKAGE *package, const WCHAR *source, const 
 {
     msi_custom_action_info *info;
     MSIBINARY *binary;
+    static WCHAR szSkip[] = {'C','A','_','I','n','s','t','a','l','l','e','d','A','c','t','i','o','n',0};
 
     if (!(binary = get_temp_binary( package, source, TRUE )))
         return ERROR_FUNCTION_FAILED;
 
     TRACE("Calling function %s from %s\n", debugstr_w(target), debugstr_w(binary->tmpfile));
+
+    /* CrossOver hack for FudaMame */
+    /* for whatever reason this action deletes the entire system registry */
+    if (strcmpW(target,szSkip)==0)
+    {
+        static WCHAR szSkipProduct[] = {'{','0','F','0','9','3','3','F','F','-','D','2','0','A','-','4','6','E','8','-','A','F','2','2','-','9','0','C','8','0','D','3','9','6','9','2','9','}',0};
+        if (strcmpW(package->ProductCode, szSkipProduct)==0)
+        {
+            TRACE("Skip this action (%s %s %s %s %s)\n",
+                debugstr_w(target),
+                debugstr_w(package->BaseURL),
+                debugstr_w(package->PackagePath),
+                debugstr_w(package->ProductCode),
+                debugstr_w(package->localfile));
+            return 0;
+        }
+    }
 
     info = do_msidbCustomActionTypeDll( package, type, binary->tmpfile, target, action );
     return wait_thread_handle( info );

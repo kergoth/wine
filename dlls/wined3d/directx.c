@@ -277,7 +277,7 @@ static void wined3d_caps_gl_ctx_destroy(const struct wined3d_caps_gl_ctx *ctx)
         ERR("wglDeleteContext(%p) failed, last error %#x.\n", ctx->gl_ctx, err);
     }
 
-    ReleaseDC(ctx->wnd, ctx->dc);
+    wined3d_release_dc(ctx->wnd, ctx->dc);
     DestroyWindow(ctx->wnd);
 
     if (ctx->restore_gl_ctx && !wglMakeCurrent(ctx->restore_dc, ctx->restore_gl_ctx))
@@ -595,6 +595,45 @@ static BOOL match_apple_nonr500ati(const struct wined3d_gl_info *gl_info, const 
     return TRUE;
 }
 
+static BOOL match_apple_ati(const struct wined3d_gl_info *gl_info, const char *gl_renderer,
+        enum wined3d_gl_vendor gl_vendor, enum wined3d_pci_vendor card_vendor, enum wined3d_pci_device device)
+{
+    return gl_vendor == GL_VENDOR_APPLE && card_vendor == HW_VENDOR_AMD;
+}
+
+static BOOL match_apple_ati_sl(const struct wined3d_gl_info *gl_info, const char *gl_renderer,
+        enum wined3d_gl_vendor gl_vendor, enum wined3d_pci_vendor card_vendor, enum wined3d_pci_device device)
+{
+    /* ATI cards on Snow Leopard support GL_ARB_texture_rg, but not on Leopard, according
+     * to Apple's OpenGL capabilities matrix. Nvidia cards don't support it, but that's ok
+     * for this matcher since its only intended for ATI anyway.
+     */
+    if(!gl_info->supported[ARB_TEXTURE_RG]) return FALSE;
+    return match_apple_ati(gl_info, gl_renderer, gl_vendor, card_vendor, device);
+}
+
+static BOOL match_broken_ara(const struct wined3d_gl_info *gl_info, const char *gl_renderer,
+        enum wined3d_gl_vendor gl_vendor, enum wined3d_pci_vendor card_vendor, enum wined3d_pci_device device)
+{
+    if (!gl_info->supported[NV_VERTEX_PROGRAM2_OPTION]) return FALSE;
+    if (gl_vendor != GL_VENDOR_APPLE) return FALSE;
+
+    switch (device)
+    {
+        /* There are no intel macs with pre-geforce 7 cards. ARA works on pre-gf8 cards */
+        case CARD_NVIDIA_GEFORCE_7400:
+        case CARD_NVIDIA_GEFORCE_7300:
+        case CARD_NVIDIA_GEFORCE_7600:
+        case CARD_NVIDIA_GEFORCE_7800GT:
+            /* ARA works on GF7 cards */
+            return FALSE;
+
+        default:
+            /* Assume ARA is broken */
+            return TRUE;
+    }
+}
+
 static BOOL match_dx10_capable(const struct wined3d_gl_info *gl_info, const char *gl_renderer,
         enum wined3d_gl_vendor gl_vendor, enum wined3d_pci_vendor card_vendor, enum wined3d_pci_device device)
 {
@@ -606,6 +645,45 @@ static BOOL match_dx10_capable(const struct wined3d_gl_info *gl_info, const char
      *
      * dx10 cards usually have 64 varyings */
     return gl_info->limits.glsl_varyings > 44;
+}
+
+static BOOL match_apple_broken_uniforms(const struct wined3d_gl_info *gl_info, const char *gl_renderer,
+                                        enum wined3d_gl_vendor gl_vendor, enum wined3d_pci_vendor card_vendor, enum wined3d_pci_device device)
+{
+    const char *sysrelease;
+    unsigned int major, minor, ret;
+    void (CDECL *my_wine_get_host_version)(const char **sysname, const char **release);
+
+    /* MacOS dx9 GPU drivers more GLSL vertex shader uniforms than supported by the hardware, and if
+     * more are used it falls back to software. While the compiler can detect if the shader uses all
+     * declared uniforms, the optimization fails if the shader uses relative addressing. So any GLSL
+     * shader using relative addressing falls back to software.
+     *
+     * ARB vp gives the correct amount of uniforms, so use it instead of GLSL.
+     *
+     * In addition, AMD Radeon HD GPUs advertise > 256 constants and can support this in HW, but the
+     * driver nevertheless falls back to software if more than 256 are used. This is fixed in MacOS
+     * 10.8.3 */
+
+    /* Non-Apple GL vendors report uniforms correctly */
+    if (!match_apple(gl_info, gl_renderer, gl_vendor, card_vendor, device)) return FALSE;
+    /* All dx9 cards are overreported on OSX */
+    if (!match_dx10_capable(gl_info, gl_renderer, gl_vendor, card_vendor, device)) return TRUE;
+    /* Nvidia and Intel DX10 cards support > 256 uniforms */
+    if (card_vendor != HW_VENDOR_AMD) return FALSE;
+
+    /* On OSX 10.8.3 and later, AMD GPUs support more than 256 constants. This OSX version reports
+     * uname -r "12.3.0" */
+    my_wine_get_host_version = (void *)GetProcAddress(GetModuleHandleA("ntdll.dll"), "wine_get_host_version");
+    if (!my_wine_get_host_version) return FALSE;
+
+    my_wine_get_host_version(NULL, &sysrelease);
+    ret = sscanf(sysrelease, "%u.%u", &major, &minor);
+    if (ret != 2) return FALSE; /* String format changed, assume workaround not needed */
+    if (major > 12) return FALSE;
+    if (major == 12 && minor >= 3) return FALSE;
+
+    return TRUE;
 }
 
 static BOOL match_not_dx10_capable(const struct wined3d_gl_info *gl_info, const char *gl_renderer,
@@ -768,6 +846,14 @@ static BOOL match_fglrx(const struct wined3d_gl_info *gl_info, const char *gl_re
     return gl_vendor == GL_VENDOR_FGLRX;
 }
 
+static void quirk_arb_constants(struct wined3d_gl_info *gl_info)
+{
+    TRACE("Using ARB vs constant limit(=%u) for GLSL.\n", gl_info->limits.arb_vs_native_constants);
+    gl_info->limits.glsl_vs_float_constants = gl_info->limits.arb_vs_native_constants;
+    TRACE("Using ARB ps constant limit(=%u) for GLSL.\n", gl_info->limits.arb_ps_native_constants);
+    gl_info->limits.glsl_ps_float_constants = gl_info->limits.arb_ps_native_constants;
+}
+
 static BOOL match_r200(const struct wined3d_gl_info *gl_info, const char *gl_renderer,
         enum wined3d_gl_vendor gl_vendor, enum wined3d_pci_vendor card_vendor, enum wined3d_pci_device device)
 {
@@ -871,6 +957,36 @@ static BOOL match_broken_arb_fog(const struct wined3d_gl_info *gl_info, const ch
     return data[0] != 0x00ff0000 || data[3] != 0x0000ff00;
 }
 
+static BOOL match_nvidia_multithreading(const struct wined3d_gl_info *gl_info, const char *gl_renderer,
+        enum wined3d_gl_vendor gl_vendor, enum wined3d_pci_vendor card_vendor, enum wined3d_pci_device device)
+{
+    char buffer[2];
+    DWORD ret;
+
+    if (gl_vendor != GL_VENDOR_NVIDIA) return FALSE;
+
+    SetLastError(0);
+    ret = GetEnvironmentVariableA("__GL_THREADED_OPTIMIZATIONS", buffer, sizeof(buffer));
+
+    /* The nvidia driver enables its threaded optimizations when the variable is set
+     * and not "0", "n" or "N". Even a value like "00", "NN" or "" enables it */
+    if (!ret)
+        return !GetLastError();
+    if (ret > 1)
+        return TRUE;
+
+    switch(buffer[0])
+    {
+        case 'n':
+        case 'N':
+        case '0':
+            return FALSE;
+
+        default:
+            return TRUE;
+    }
+}
+
 static void quirk_apple_glsl_constants(struct wined3d_gl_info *gl_info)
 {
     /* MacOS needs uniforms for relative addressing offsets. This can accumulate to quite a few uniforms.
@@ -956,9 +1072,43 @@ static void quirk_disable_nvvp_clip(struct wined3d_gl_info *gl_info)
     gl_info->quirks |= WINED3D_QUIRK_NV_CLIP_BROKEN;
 }
 
+static void quirk_compressed_cube(struct wined3d_gl_info *gl_info)
+{
+    gl_info->quirks |= WINED3D_CX_QUIRK_COMPRESSED_CUBE_MIP;
+}
+
+static void quirk_apple_no_glsl_clip(struct wined3d_gl_info *gl_info)
+{
+    gl_info->quirks |= WINED3D_CX_QUIRK_GLSL_CLIP_BROKEN;
+}
+
+static void texcoord_fog_quirk(struct wined3d_gl_info *gl_info)
+{
+    gl_info->quirks |= WINED3D_CX_QUIRK_TEXCOORD_FOG;
+}
+
+static void broken_ara_quirk(struct wined3d_gl_info *gl_info)
+{
+    gl_info->quirks |= WINED3D_CX_QUIRK_BROKEN_ARA;
+}
+
+static void fbo_blit_quirk(struct wined3d_gl_info *gl_info)
+{
+    gl_info->quirks |= WINED3D_CX_QUIRK_BLIT;
+}
+
 static void quirk_fbo_tex_update(struct wined3d_gl_info *gl_info)
 {
     gl_info->quirks |= WINED3D_QUIRK_FBO_TEX_UPDATE;
+}
+
+static void render_to_fbo_quirk(struct wined3d_gl_info *gl_info)
+{
+    /* Mac OSX 10.6(Snow Leopard) has a bug when glBlitFramebufferEXT
+     * is called to copy from the onscreen backbuffer to a framebuffer.
+     * Render the swapchain to a FBO to avoid from-backbuffer blits.
+     */
+    gl_info->quirks |= WINED3D_CX_QUIRK_RENDER_TO_FBO;
 }
 
 static void quirk_broken_rgba16(struct wined3d_gl_info *gl_info)
@@ -979,6 +1129,11 @@ static void quirk_limited_tex_filtering(struct wined3d_gl_info *gl_info)
        Also, DX9-era GPUs are somewhat limited with float textures
        filtering and blending. */
     gl_info->quirks |= WINED3D_QUIRK_LIMITED_TEX_FILTERING;
+}
+
+static void quirk_apple_double_buffer(struct wined3d_gl_info *gl_info)
+{
+    gl_info->quirks |= WINED3D_CX_QUIRK_APPLE_DOUBLE_BUFFER;
 }
 
 static void quirk_r200_constants(struct wined3d_gl_info *gl_info)
@@ -1007,6 +1162,14 @@ struct driver_quirk
     const char *description;
 };
 
+static void quirk_mapbuffer(struct wined3d_gl_info *gl_info)
+{
+    if (cxgames_hacks.allow_glmapbuffer == WINED3D_MAPBUF_STATIC_NV)
+        cxgames_hacks.allow_glmapbuffer = WINED3D_MAPBUF_STATIC;
+    else if (cxgames_hacks.allow_glmapbuffer == WINED3D_MAPBUF_NEVER_NV)
+        cxgames_hacks.allow_glmapbuffer = WINED3D_MAPBUF_NEVER;
+}
+
 static const struct driver_quirk quirk_table[] =
 {
     {
@@ -1017,7 +1180,20 @@ static const struct driver_quirk quirk_table[] =
     {
         match_apple,
         quirk_apple_glsl_constants,
+        "Reserving 12 GLSL uniforms on OSX"
+    },
+    {
+        match_apple_broken_uniforms,
+        quirk_arb_constants,
         "Apple GLSL uniform override"
+    },
+    /* Additionally to matching the apple vendor this code could try to compile a testing NVvp shader
+     * that writes to result.clip[n]. This syntax is broken on osx
+     */
+    {
+        match_apple,
+        quirk_apple_no_glsl_clip,
+        "Disabled vertex shader clipping on Macs"
     },
     {
         match_geforce5,
@@ -1029,6 +1205,13 @@ static const struct driver_quirk quirk_table[] =
         quirk_texcoord_w,
         "Init texcoord .w for Apple Intel GPU driver"
     },
+    /* Used as a workaround for Apple X3100 cards, where linear mipmapping fails
+     * on compressed cube maps. Rdar 6963094. */
+    {
+        match_apple_intel,
+        quirk_compressed_cube,
+        "Disabled compressed cube maps on Apple Intel GPU driver"
+    },
     {
         match_apple_nonr500ati,
         quirk_texcoord_w,
@@ -1038,6 +1221,17 @@ static const struct driver_quirk quirk_table[] =
         match_dx10_capable,
         quirk_clip_varying,
         "Reserved varying for gl_ClipPos"
+    },
+    {
+        match_amd_r300_to_500,
+        texcoord_fog_quirk,
+        "Disable fog if 8 texcoords are used"
+    },
+    {
+        /* GL_NV_vertex_program2's ARA instruction is broken on gf8+ cards on OSX. */
+        match_broken_ara,
+        broken_ara_quirk,
+        "Disable broken ARA instruction"
     },
     {
         /* GL_EXT_secondary_color does not allow 4 component secondary colors, but most
@@ -1060,6 +1254,11 @@ static const struct driver_quirk quirk_table[] =
         "Apple NV_vertex_program clip bug quirk"
     },
     {
+        match_apple_ati,
+        fbo_blit_quirk,
+        "GL_EXT_framebuffer_blit glBlendFunc and glColorMask quirk"
+    },
+    {
         match_fbo_tex_update,
         quirk_fbo_tex_update,
         "FBO rebind for attachment updates"
@@ -1080,6 +1279,16 @@ static const struct driver_quirk quirk_table[] =
         "Texture filtering, blending and VTF support is limited"
     },
     {
+        match_apple_ati_sl,
+        render_to_fbo_quirk,
+        "Render to FBO quirk"
+    },
+    {
+        match_apple,
+        quirk_apple_double_buffer,
+        "Apple double buffered context bug (9330)"
+    },
+    {
         match_r200,
         quirk_r200_constants,
         "r200 vertex shader constants"
@@ -1089,7 +1298,31 @@ static const struct driver_quirk quirk_table[] =
         quirk_broken_arb_fog,
         "ARBfp fogstart == fogend workaround"
     },
+    {
+        match_nvidia_multithreading,
+        quirk_mapbuffer,
+        "NVidia multithreading glMapBuffer[Range] quirk"
+    },
 };
+
+/* NOT a quirk function! */
+static void apply_auto_glsl(struct wined3d_gl_info *gl_info, enum wined3d_gl_vendor gl_vendor,
+        enum wined3d_pci_vendor card_vendor, enum wined3d_pci_device device)
+{
+    /* Disable GLSL if NV asm extensions are supported */
+    if(gl_info->supported[NV_VERTEX_PROGRAM2_OPTION] && gl_info->supported[NV_FRAGMENT_PROGRAM_OPTION]
+            && gl_info->limits.arb_vs_float_constants >= 256 && gl_info->limits.arb_vs_native_constants >= 256
+            && gl_info->limits.arb_ps_float_constants >= 256 && gl_info->limits.arb_ps_native_constants >= 256)
+    {
+        TRACE("Auto GLSL: Not using GLSL because NV asm extensions are supported\n");
+        gl_info->supported[ARB_VERTEX_SHADER] = FALSE;
+        gl_info->supported[ARB_FRAGMENT_SHADER] = FALSE;
+        return;
+    }
+
+    /* Otherwise use GLSL */
+    TRACE("Auto GLSL: Using GLSL\n");
+}
 
 /* Certain applications (Steam) complain if we report an outdated driver version. In general,
  * reporting a driver version is moot because we are not the Windows driver, and we have different
@@ -1512,6 +1745,29 @@ static void fixup_extensions(struct wined3d_gl_info *gl_info, const char *gl_ren
         if (!quirk_table[i].match(gl_info, gl_renderer, gl_vendor, card_vendor, device)) continue;
         TRACE("Applying driver quirk \"%s\".\n", quirk_table[i].description);
         quirk_table[i].apply(gl_info);
+    }
+
+    if (gl_info->supported[APPLE_CLIENT_STORAGE])
+    {
+        if (cxgames_hacks.allow_apple_client_storage == CLIENTSTORAGE_DISABLE)
+        {
+            TRACE("Client storage disabled\n");
+            gl_info->supported[APPLE_CLIENT_STORAGE] = FALSE;
+        }
+        else if (cxgames_hacks.allow_apple_client_storage == CLIENTSTORAGE_DISABLE_NVIDIA_GF7
+                && (card_vendor != HW_VENDOR_NVIDIA || strstr(gl_renderer, "GeForce 8")))
+        {
+            TRACE("Client storage enabled for non-nvidia or gf8 card\n");
+        }
+        else if (cxgames_hacks.allow_apple_client_storage == CLIENTSTORAGE_ENABLE)
+        {
+            TRACE("Client storage enabled\n");
+        }
+        else
+        {
+            TRACE("Client storage disabled for gf7 card\n");
+            gl_info->supported[APPLE_CLIENT_STORAGE] = FALSE;
+        }
     }
 
     /* Find out if PBOs work as they are supposed to. */
@@ -2441,7 +2697,7 @@ static const struct fragment_pipeline *select_fragment_implementation(const stru
 
 static const struct wined3d_shader_backend_ops *select_shader_backend(const struct wined3d_gl_info *gl_info)
 {
-    BOOL glsl = wined3d_settings.glslRequested && gl_info->glsl_version >= MAKEDWORD_VERSION(1, 20);
+    BOOL glsl = wined3d_settings.glslRequested != GLSL_DISABLED && gl_info->glsl_version >= MAKEDWORD_VERSION(1, 20);
 
     if (glsl && gl_info->supported[ARB_FRAGMENT_SHADER])
         return &glsl_shader_backend;
@@ -2498,6 +2754,38 @@ static void parse_extension_string(struct wined3d_gl_info *gl_info, const char *
             {
                 TRACE(" FOUND: %s support.\n", map[i].extension_string);
                 gl_info->supported[map[i].extension] = TRUE;
+                break;
+            }
+        }
+    }
+}
+
+static void disable_extensions(struct wined3d_gl_info *gl_info, const char *extensions,
+        const struct wined3d_extension_map *map, UINT entry_count)
+{
+    while (*extensions)
+    {
+        const char *start;
+        size_t len;
+        UINT i;
+
+        while (isspace(*extensions))
+            ++extensions;
+        start = extensions;
+        while (!isspace(*extensions) && *extensions)
+            ++extensions;
+
+        len = extensions - start;
+        if (!len)
+            continue;
+
+        for (i = 0; i < entry_count; ++i)
+        {
+            if (len == strlen(map[i].extension_string)
+                    && !memcmp(start, map[i].extension_string, len))
+            {
+                TRACE(" DISABLING: %s.\n", map[i].extension_string);
+                gl_info->supported[map[i].extension] = FALSE;
                 break;
             }
         }
@@ -2726,6 +3014,14 @@ static void wined3d_adapter_init_limits(struct wined3d_gl_info *gl_info)
     }
 }
 
+/* CodeWeavers HACK bug 10104
+ * Allow a registry key to dictate the number of vertex constants. */ 
+static void fix_vs_constants(struct wined3d_gl_info *gl_info)
+{
+    if(cxgames_hacks.fixed_vs_constants_limit)
+        gl_info->limits.glsl_vs_float_constants = cxgames_hacks.fixed_vs_constants_limit;
+}
+
 /* Context activation is done by the caller. */
 static BOOL wined3d_adapter_init_gl_caps(struct wined3d_adapter *adapter)
 {
@@ -2820,6 +3116,15 @@ static BOOL wined3d_adapter_init_gl_caps(struct wined3d_adapter *adapter)
     {
         TRACE("GL CORE: GL_ARB_texture_non_power_of_two support.\n");
         gl_info->supported[ARB_TEXTURE_NON_POWER_OF_TWO] = TRUE;
+    }
+
+    /* CodeWeavers Hack bug 5501 - Allow registry disabling of OpenGL extensions. */
+    if (cxgames_hacks.disabled_extensions)
+    {
+        disable_extensions(gl_info, cxgames_hacks.disabled_extensions, gl_extension_map,
+                sizeof(gl_extension_map) / sizeof(*gl_extension_map));
+        disable_extensions(gl_info, cxgames_hacks.disabled_extensions, wgl_extension_map,
+                sizeof(wgl_extension_map) / sizeof(*wgl_extension_map));
     }
 
     if (gl_version >= MAKEDWORD_VERSION(2, 0)) gl_info->supported[WINED3D_GL_VERSION_2_0] = TRUE;
@@ -2950,26 +3255,12 @@ static BOOL wined3d_adapter_init_gl_caps(struct wined3d_adapter *adapter)
 
     checkGLcall("extension detection");
 
-    adapter->shader_backend = select_shader_backend(gl_info);
-    adapter->vertex_pipe = select_vertex_implementation(gl_info, adapter->shader_backend);
-    adapter->fragment_pipe = select_fragment_implementation(gl_info, adapter->shader_backend);
-    adapter->blitter = select_blit_implementation(gl_info, adapter->shader_backend);
+    gl_vendor = wined3d_guess_gl_vendor(gl_info, gl_vendor_str, gl_renderer_str);
+    card_vendor = wined3d_guess_card_vendor(gl_vendor_str, gl_renderer_str);
+    TRACE("Found GL_VENDOR (%s)->(0x%04x/0x%04x).\n", debugstr_a(gl_vendor_str), gl_vendor, card_vendor);
 
-    adapter->shader_backend->shader_get_caps(&adapter->gl_info, &shader_caps);
-    adapter->d3d_info.vs_clipping = shader_caps.wined3d_caps & WINED3D_SHADER_CAP_VS_CLIPPING;
-    adapter->d3d_info.limits.vs_version = shader_caps.vs_version;
-    adapter->d3d_info.limits.gs_version = shader_caps.gs_version;
-    adapter->d3d_info.limits.ps_version = shader_caps.ps_version;
-    adapter->d3d_info.limits.vs_uniform_count = shader_caps.vs_uniform_count;
-    adapter->d3d_info.limits.ps_uniform_count = shader_caps.ps_uniform_count;
-
-    adapter->vertex_pipe->vp_get_caps(gl_info, &vertex_caps);
-    adapter->d3d_info.xyzrhw = vertex_caps.xyzrhw;
-
-    adapter->fragment_pipe->get_caps(gl_info, &fragment_caps);
-    adapter->d3d_info.limits.ffp_blend_stages = fragment_caps.MaxTextureBlendStages;
-    adapter->d3d_info.limits.ffp_textures = fragment_caps.MaxSimultaneousTextures;
-    TRACE("Max texture stages: %u.\n", adapter->d3d_info.limits.ffp_blend_stages);
+    device = wined3d_guess_card(gl_info, gl_renderer_str, &gl_vendor, &card_vendor);
+    TRACE("Found (fake) card: 0x%x (vendor id), 0x%x (device id).\n", card_vendor, device);
 
     if (gl_info->supported[ARB_FRAMEBUFFER_OBJECT])
     {
@@ -3033,13 +3324,6 @@ static BOOL wined3d_adapter_init_gl_caps(struct wined3d_adapter *adapter)
         }
     }
 
-    gl_vendor = wined3d_guess_gl_vendor(gl_info, gl_vendor_str, gl_renderer_str);
-    card_vendor = wined3d_guess_card_vendor(gl_vendor_str, gl_renderer_str);
-    TRACE("Found GL_VENDOR (%s)->(0x%04x/0x%04x).\n", debugstr_a(gl_vendor_str), gl_vendor, card_vendor);
-
-    device = wined3d_guess_card(gl_info, gl_renderer_str, &gl_vendor, &card_vendor);
-    TRACE("Found (fake) card: 0x%x (vendor id), 0x%x (device id).\n", card_vendor, device);
-
     gl_info->wrap_lookup[WINED3D_TADDRESS_WRAP - WINED3D_TADDRESS_WRAP] = GL_REPEAT;
     gl_info->wrap_lookup[WINED3D_TADDRESS_MIRROR - WINED3D_TADDRESS_WRAP] =
             gl_info->supported[ARB_TEXTURE_MIRRORED_REPEAT] ? GL_MIRRORED_REPEAT_ARB : GL_REPEAT;
@@ -3054,8 +3338,33 @@ static BOOL wined3d_adapter_init_gl_caps(struct wined3d_adapter *adapter)
         adapter->d3d_info.valid_rt_mask |= (1 << i);
 
     fixup_extensions(gl_info, gl_renderer_str, gl_vendor, card_vendor, device);
+    fix_vs_constants(gl_info);
     init_driver_info(driver_info, card_vendor, device);
     add_gl_compat_wrappers(gl_info);
+
+    if (wined3d_settings.glslRequested == GLSL_AUTO)
+        apply_auto_glsl(gl_info, gl_vendor, card_vendor, device);
+
+    adapter->shader_backend = select_shader_backend(gl_info);
+    adapter->vertex_pipe = select_vertex_implementation(gl_info, adapter->shader_backend);
+    adapter->fragment_pipe = select_fragment_implementation(gl_info, adapter->shader_backend);
+    adapter->blitter = select_blit_implementation(gl_info, adapter->shader_backend);
+
+    adapter->shader_backend->shader_get_caps(&adapter->gl_info, &shader_caps);
+    adapter->d3d_info.vs_clipping = shader_caps.wined3d_caps & WINED3D_SHADER_CAP_VS_CLIPPING;
+    adapter->d3d_info.limits.vs_version = shader_caps.vs_version;
+    adapter->d3d_info.limits.gs_version = shader_caps.gs_version;
+    adapter->d3d_info.limits.ps_version = shader_caps.ps_version;
+    adapter->d3d_info.limits.vs_uniform_count = shader_caps.vs_uniform_count;
+    adapter->d3d_info.limits.ps_uniform_count = shader_caps.ps_uniform_count;
+
+    adapter->vertex_pipe->vp_get_caps(gl_info, &vertex_caps);
+    adapter->d3d_info.xyzrhw = vertex_caps.xyzrhw;
+
+    adapter->fragment_pipe->get_caps(gl_info, &fragment_caps);
+    adapter->d3d_info.limits.ffp_blend_stages = fragment_caps.MaxTextureBlendStages;
+    adapter->d3d_info.limits.ffp_textures = fragment_caps.MaxSimultaneousTextures;
+    TRACE("Max texture stages: %u.\n", adapter->d3d_info.limits.ffp_blend_stages);
 
     return TRUE;
 }
@@ -3765,12 +4074,17 @@ static BOOL CheckSurfaceCapability(const struct wined3d_adapter *adapter,
     if (CheckDepthStencilCapability(adapter, adapter_format, check_format)) return TRUE;
 
     /* If opengl can't process the format natively, the blitter may be able to convert it */
+    if(0) {
+    /* Disabled for now in CrossOver. It is not needed by any supported application, and it currently
+     * breaks quicktime because we cannot do offscreen->offscreen YUV conversions yet
+     */
     if (adapter->blitter->blit_supported(&adapter->gl_info, WINED3D_BLIT_OP_COLOR_BLIT,
             NULL, WINED3D_POOL_DEFAULT, 0, check_format,
             NULL, WINED3D_POOL_DEFAULT, 0, adapter_format))
     {
         TRACE("[OK]\n");
         return TRUE;
+    }
     }
 
     /* Reject other formats */
@@ -4462,7 +4776,11 @@ HRESULT CDECL wined3d_get_device_caps(const struct wined3d *wined3d, UINT adapte
 
     caps->MaxUserClipPlanes                = vertex_caps.max_user_clip_planes;
     caps->MaxActiveLights                  = vertex_caps.max_active_lights;
-    caps->MaxVertexBlendMatrices           = vertex_caps.max_vertex_blend_matrices;
+
+    if (cxgames_hacks.max_vertex_blend_matrices && vertex_caps.max_vertex_blend_matrices <= 1)
+        caps->MaxVertexBlendMatrices = cxgames_hacks.max_vertex_blend_matrices;
+    else
+        caps->MaxVertexBlendMatrices           = vertex_caps.max_vertex_blend_matrices;
     caps->MaxVertexBlendMatrixIndex        = vertex_caps.max_vertex_blend_matrix_index;
     caps->VertexProcessingCaps             = vertex_caps.vertex_processing_caps;
     caps->FVFCaps                          = vertex_caps.fvf_caps;
@@ -4707,7 +5025,7 @@ static void WINE_GLAPI invalid_texcoord_func(GLenum unit, const void *data)
 }
 
 /* Helper functions for providing vertex data to opengl. The arrays are initialized based on
- * the extension detection and are used in drawStridedSlow
+ * the extension detection and are used in draw_strided_slow
  */
 static void WINE_GLAPI position_d3dcolor(const void *data)
 {

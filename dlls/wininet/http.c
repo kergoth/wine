@@ -2761,7 +2761,7 @@ static DWORD start_next_chunk(chunked_stream_t *stream, http_request_t *req)
 
     assert(!stream->chunk_size || stream->chunk_size == ~0u);
 
-    if (stream->end_of_data) return ERROR_NO_MORE_FILES;
+    if (stream->end_of_data) return ERROR_SUCCESS;
 
     /* read terminator for the previous chunk */
     if(!stream->chunk_size && (res = discard_chunked_eol(stream, req)) != ERROR_SUCCESS)
@@ -4811,6 +4811,11 @@ static DWORD open_http_connection(http_request_t *request, BOOL *reusing)
 
     if(netconn) {
         TRACE("<-- reusing %p netconn\n", netconn);
+        if (netconn->event_socket != -1)
+        {
+            closesocket(netconn->event_socket);
+            netconn->event_socket = create_event_socket();
+        }
         request->netconn = netconn;
         *reusing = TRUE;
         return ERROR_SUCCESS;

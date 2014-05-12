@@ -183,6 +183,8 @@ static const struct wined3d_format_base_flags format_base_flags[] =
     {WINED3DFMT_R16G16B16A16_FLOAT, WINED3DFMT_FLAG_FLOAT},
     {WINED3DFMT_D32_FLOAT,          WINED3DFMT_FLAG_FLOAT},
     {WINED3DFMT_S8_UINT_D24_FLOAT,  WINED3DFMT_FLAG_FLOAT},
+    {WINED3DFMT_P8_UINT,            WINED3DFMT_FLAG_PALETTE},
+    {WINED3DFMT_P8_UINT_A8_UNORM,   WINED3DFMT_FLAG_PALETTE},
 };
 
 struct wined3d_format_block_info
@@ -2794,19 +2796,6 @@ void dump_color_fixup_desc(struct color_fixup_desc fixup)
     TRACE("\tW: %s%s\n", debug_fixup_channel_source(fixup.w_source), fixup.w_sign_fixup ? ", SIGN_FIXUP" : "");
 }
 
-const char *debug_surflocation(DWORD flag) {
-    char buf[128];
-
-    buf[0] = 0;
-    if (flag & SFLAG_INSYSMEM) strcat(buf, " | SFLAG_INSYSMEM");                    /* 17 */
-    if (flag & SFLAG_INDRAWABLE) strcat(buf, " | SFLAG_INDRAWABLE");                /* 19 */
-    if (flag & SFLAG_INTEXTURE) strcat(buf, " | SFLAG_INTEXTURE");                  /* 18 */
-    if (flag & SFLAG_INSRGBTEX) strcat(buf, " | SFLAG_INSRGBTEX");                  /* 18 */
-    if (flag & SFLAG_INRB_MULTISAMPLE) strcat(buf, " | SFLAG_INRB_MULTISAMPLE");    /* 25 */
-    if (flag & SFLAG_INRB_RESOLVED) strcat(buf, " | SFLAG_INRB_RESOLVED");          /* 22 */
-    return wine_dbg_sprintf("%s", buf[0] ? buf + 3 : "0");
-}
-
 BOOL is_invalid_op(const struct wined3d_state *state, int stage,
         enum wined3d_texture_op op, DWORD arg1, DWORD arg2, DWORD arg3)
 {
@@ -2927,7 +2916,7 @@ void set_texture_matrix(const struct wined3d_gl_info *gl_info, const float *smat
                 * check for pixel shaders, and the shader has to undo the default gl divide.
                 *
                 * A more serious problem occurs if the app passes 4 coordinates in, and the
-                * 4th is != 1.0(opengl default). This would have to be fixed in drawStridedSlow
+                * 4th is != 1.0(opengl default). This would have to be fixed in draw_strided_slow
                 * or a replacement shader. */
                 default:
                     mat[3] = mat[7] = mat[11] = 0; mat[15] = 1;
@@ -3227,7 +3216,7 @@ void gen_ffp_frag_op(const struct wined3d_context *context, const struct wined3d
     unsigned int i;
     DWORD ttff;
     DWORD cop, aop, carg0, carg1, carg2, aarg0, aarg1, aarg2;
-    const struct wined3d_surface *rt = state->fb->render_targets[0];
+    const struct wined3d_surface *rt = state->fb.render_targets[0];
     const struct wined3d_gl_info *gl_info = context->gl_info;
     const struct wined3d_d3d_info *d3d_info = context->d3d_info;
 
@@ -3278,7 +3267,9 @@ void gen_ffp_frag_op(const struct wined3d_context *context, const struct wined3d
                         break;
                 }
             }
-        } else {
+        }
+        else
+        {
             settings->op[i].color_fixup = COLOR_FIXUP_IDENTITY;
             settings->op[i].tex_type = tex_1d;
         }
@@ -3791,7 +3782,7 @@ void wined3d_get_draw_rect(const struct wined3d_state *state, RECT *rect)
 
 const char *wined3d_debug_location(DWORD location)
 {
-    char buf[200];
+    char buf[300];
 
     buf[0] = '\0';
 #define LOCATION_TO_STR(u) if (location & u) { strcat(buf, " | "#u); location &= ~u; }
@@ -3800,6 +3791,11 @@ const char *wined3d_debug_location(DWORD location)
     LOCATION_TO_STR(WINED3D_LOCATION_BUFFER);
     LOCATION_TO_STR(WINED3D_LOCATION_TEXTURE_RGB);
     LOCATION_TO_STR(WINED3D_LOCATION_TEXTURE_SRGB);
+    LOCATION_TO_STR(WINED3D_LOCATION_DRAWABLE);
+    LOCATION_TO_STR(WINED3D_LOCATION_RB_MULTISAMPLE);
+    LOCATION_TO_STR(WINED3D_LOCATION_RB_RESOLVED);
+    LOCATION_TO_STR(WINED3D_LOCATION_USER);
+    LOCATION_TO_STR(WINED3D_LOCATION_DIB);
 #undef LOCATION_TO_STR
     if (location) FIXME("Unrecognized location flag(s) %#x.\n", location);
 
@@ -3851,4 +3847,18 @@ void wined3d_ftoa(float value, char *s)
     }
 
     sprintf(s, "%s%d.%08de%+03d", sign, x, frac, exponent);
+}
+
+void wined3d_release_dc(HWND window, HDC dc)
+{
+    /* You'd figure ReleaseDC() would fail if the DC doesn't match the window.
+     * However, that's not what actually happens, and there are user32 tests
+     * that confirm ReleaseDC() with the wrong window is supposed to succeed.
+     * So explicitly check that the DC belongs to the window, since we want to
+     * avoid releasing a DC that belongs to some other window if the original
+     * window was already destroyed. */
+    if (WindowFromDC(dc) != window)
+        WARN("DC %p does not belong to window %p.\n", dc, window);
+    else if (!ReleaseDC(window, dc))
+        ERR("Failed to release device context %p, last error %#x.\n", dc, GetLastError());
 }

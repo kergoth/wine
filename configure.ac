@@ -429,6 +429,7 @@ AC_CHECK_HEADERS(\
 	linux/ioctl.h \
 	linux/joystick.h \
 	linux/major.h \
+	linux/netlink.h \
 	linux/param.h \
 	linux/serial.h \
 	linux/types.h \
@@ -471,6 +472,7 @@ AC_CHECK_HEADERS(\
 	sys/inotify.h \
 	sys/ioctl.h \
 	sys/ipc.h \
+	sys/kern_event.h \
 	sys/limits.h \
 	sys/link.h \
 	sys/mman.h \
@@ -684,7 +686,7 @@ AC_SUBST(LOADER_RULES,["
 all: $wine_binary wine-installed
 
 install install-lib:: wine-installed \$(DESTDIR)\$(bindir)
-	\$(INSTALL_PROGRAM) wine-installed \$(DESTDIR)\$(bindir)/$wine_binary
+	\$(INSTALL_PROGRAM) wine-installed \$(DESTDIR)\$(bindir)/wineloader
 
 uninstall::
 	\$(RM) \$(DESTDIR)\$(bindir)/$wine_binary
@@ -963,6 +965,15 @@ wine-installed: main.o Makefile.in
       WINE_TRY_CFLAGS([-Wl,--enable-new-dtags],
                       [LDRPATH_INSTALL="$LDRPATH_INSTALL -Wl,--enable-new-dtags"])
 
+      AC_CACHE_CHECK([whether gcc accepts -static-libgcc], ac_cv_c_dll_static_libgcc,
+        [WINE_TRY_CFLAGS([-shared -static-libgcc],
+                         ac_cv_c_dll_static_libgcc="yes",ac_cv_c_dll_static_libgcc="no")])
+      if test "$ac_cv_c_dll_static_libgcc" = "yes"
+      then
+        LDSHARED="$LDSHARED -static-libgcc"
+        LDDLLFLAGS="$LDDLLFLAGS -static-libgcc"
+      fi
+
       case $host_cpu in
         *i[[3456789]]86* | x86_64)
           WINE_TRY_CFLAGS([-Wl,--section-start,.interp=0x7bf00400],
@@ -1233,8 +1244,8 @@ This probably prevents linking to OpenGL. Try deleting the file and restarting c
 		     $X_LIBS $XLIB -lm $X_EXTRA_LIBS)
         if test "x$with_glu" != "xno"
         then
-            AC_CHECK_LIB(GLU,gluLookAt,[:],,[$OPENGL_LIBS $X_LIBS $XLIB -lm $X_EXTRA_LIBS])
-            WINE_NOTICE_WITH(glu,[test "x$ac_cv_lib_GLU_gluLookAt" != xyes],
+            WINE_CHECK_SONAME(GLU,gluLookAt,,,[$OPENGL_LIBS $X_LIBS $XLIB -lm $X_EXTRA_LIBS])
+            WINE_NOTICE_WITH(glu,[test "x$ac_cv_lib_soname_GLU" = "x"],
                              [libGLU ${notice_platform}development files not found, GLU won't be supported.])
         fi
 
@@ -1259,7 +1270,7 @@ WINE_ERROR_WITH(x,[test "x$XLIB" = "x"],[X ${notice_platform}development files n
 without X support, which probably isn't what you want. You will need
 to install ${notice_platform}development packages of Xlib/Xfree86 at the very least.])
 
-test "x$ac_cv_lib_GLU_gluLookAt" != xyes && enable_glu32=${enable_glu32:-no}
+test "x$ac_cv_lib_soname_GLU" = "x" && enable_glu32=${enable_glu32:-no}
 
 dnl **** Check for OpenCL ****
 if test "$ac_cv_header_CL_cl_h" = "yes"
@@ -2680,6 +2691,7 @@ WINE_CONFIG_EXTRA_DIR(include/wine)
 
 WINE_CONFIG_MAKERULES([Make.rules],[MAKE_RULES])
 
+WINE_CONFIG_DLL(32autole)
 WINE_CONFIG_DLL(acledit)
 WINE_CONFIG_DLL(aclui,,[implib])
 WINE_CONFIG_DLL(activeds,,[implib])
@@ -2906,6 +2918,8 @@ WINE_CONFIG_DLL(iccvid,,[po])
 WINE_CONFIG_DLL(icmp)
 WINE_CONFIG_DLL(ieframe,,[clean,implib,po])
 WINE_CONFIG_TEST(dlls/ieframe/tests)
+WINE_CONFIG_DLL(ieinfo5.ocx)
+WINE_CONFIG_DLL(iernonce)
 WINE_CONFIG_DLL(ifsmgr.vxd,enable_win16)
 WINE_CONFIG_DLL(imaadp32.acm)
 WINE_CONFIG_DLL(imagehlp,,[implib])
@@ -3306,7 +3320,7 @@ WINE_CONFIG_PROGRAM(aspnet_regiis,,[install])
 WINE_CONFIG_PROGRAM(attrib,,[install,po])
 WINE_CONFIG_PROGRAM(cabarc,,[install])
 WINE_CONFIG_PROGRAM(cacls,,[install])
-WINE_CONFIG_PROGRAM(clock,,[install,po])
+WINE_CONFIG_PROGRAM(clock,,[po])
 WINE_CONFIG_PROGRAM(cmd,,[install,po])
 WINE_CONFIG_TEST(programs/cmd/tests)
 WINE_CONFIG_PROGRAM(conhost,,[install])
@@ -3320,29 +3334,29 @@ WINE_CONFIG_PROGRAM(extrac32,,[install])
 WINE_CONFIG_PROGRAM(findstr,,[install])
 WINE_CONFIG_PROGRAM(hh,,[install])
 WINE_CONFIG_PROGRAM(hostname,,[install,po])
-WINE_CONFIG_PROGRAM(icinfo,,[install])
+WINE_CONFIG_PROGRAM(icinfo)
 WINE_CONFIG_PROGRAM(iexplore,,[install])
 WINE_CONFIG_PROGRAM(ipconfig,,[install,po])
 WINE_CONFIG_PROGRAM(lodctr,,[install])
 WINE_CONFIG_PROGRAM(mofcomp,,[install])
 WINE_CONFIG_PROGRAM(mshta,,[install])
-WINE_CONFIG_PROGRAM(msiexec,,[install,installbin,manpage])
+WINE_CONFIG_PROGRAM(msiexec,,[install,manpage])
 WINE_CONFIG_PROGRAM(net,,[install,po])
 WINE_CONFIG_PROGRAM(netsh,,[install])
 WINE_CONFIG_PROGRAM(netstat,,[install,po])
 WINE_CONFIG_PROGRAM(ngen,,[install])
-WINE_CONFIG_PROGRAM(notepad,,[install,installbin,manpage,po])
+WINE_CONFIG_PROGRAM(notepad,,[install,manpage,po])
 WINE_CONFIG_PROGRAM(oleview,,[install,po])
 WINE_CONFIG_PROGRAM(ping,,[install])
 WINE_CONFIG_PROGRAM(plugplay,,[install])
 WINE_CONFIG_PROGRAM(presentationfontcache,,[install])
-WINE_CONFIG_PROGRAM(progman,,[install,po])
+WINE_CONFIG_PROGRAM(progman,,[po])
 WINE_CONFIG_PROGRAM(reg,,[install,po])
 WINE_CONFIG_PROGRAM(regasm,,[install])
-WINE_CONFIG_PROGRAM(regedit,,[install,installbin,manpage,po])
+WINE_CONFIG_PROGRAM(regedit,,[install,manpage,po])
 WINE_CONFIG_TEST(programs/regedit/tests)
 WINE_CONFIG_PROGRAM(regsvcs,,[install])
-WINE_CONFIG_PROGRAM(regsvr32,,[install,installbin,manpage])
+WINE_CONFIG_PROGRAM(regsvr32,,[install,manpage])
 WINE_CONFIG_PROGRAM(rpcss,,[clean,install])
 WINE_CONFIG_PROGRAM(rundll.exe16,enable_win16,[install])
 WINE_CONFIG_PROGRAM(rundll32,,[install])
@@ -3361,18 +3375,18 @@ WINE_CONFIG_PROGRAM(taskmgr,,[install,po])
 WINE_CONFIG_PROGRAM(termsv,,[install])
 WINE_CONFIG_PROGRAM(uninstaller,,[install,po])
 WINE_CONFIG_PROGRAM(unlodctr,,[install])
-WINE_CONFIG_PROGRAM(view,,[install,po])
-WINE_CONFIG_PROGRAM(wineboot,,[install,installbin,manpage,po])
+WINE_CONFIG_PROGRAM(view,,[po])
+WINE_CONFIG_PROGRAM(wineboot,,[install,manpage,po])
 WINE_CONFIG_PROGRAM(winebrowser,,[install])
-WINE_CONFIG_PROGRAM(winecfg,,[install,installbin,manpage,po])
-WINE_CONFIG_PROGRAM(wineconsole,,[install,installbin,manpage,po])
-WINE_CONFIG_PROGRAM(winedbg,,[install,installbin,manpage,po])
+WINE_CONFIG_PROGRAM(winecfg,,[install,manpage,po])
+WINE_CONFIG_PROGRAM(wineconsole,,[install,manpage,po])
+WINE_CONFIG_PROGRAM(winedbg,,[install,manpage,po])
 WINE_CONFIG_PROGRAM(winedevice,,[install])
-WINE_CONFIG_PROGRAM(winefile,,[install,installbin,manpage,po])
+WINE_CONFIG_PROGRAM(winefile,,[install,manpage,po])
 WINE_CONFIG_PROGRAM(winemenubuilder,,[install])
-WINE_CONFIG_PROGRAM(winemine,,[install,installbin,manpage,po])
+WINE_CONFIG_PROGRAM(winemine,,[manpage,po])
 WINE_CONFIG_PROGRAM(winemsibuilder,,[install])
-WINE_CONFIG_PROGRAM(winepath,,[install,installbin,manpage])
+WINE_CONFIG_PROGRAM(winepath,,[install,manpage])
 WINE_CONFIG_PROGRAM(winetest,,[clean])
 WINE_CONFIG_PROGRAM(winevdm,enable_win16,[install])
 WINE_CONFIG_PROGRAM(winhelp.exe16,enable_win16,[install])

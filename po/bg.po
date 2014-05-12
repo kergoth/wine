@@ -5,7 +5,7 @@ msgstr ""
 "Project-Id-Version: Wine\n"
 "Report-Msgid-Bugs-To: http://bugs.winehq.org\n"
 "POT-Creation-Date: N/A\n"
-"PO-Revision-Date: N/A\n"
+"PO-Revision-Date: 2014-02-07 12:22-0600\n"
 "Last-Translator: Automatically generated\n"
 "Language-Team: none\n"
 "Language: Bulgarian\n"
@@ -395,8 +395,8 @@ msgctxt "hotkey"
 msgid "None"
 msgstr "Нищо"
 
-#: comctl32.rc:28 cryptui.rc:227 regedit.rc:234 taskmgr.rc:434 winedbg.rc:57
-#: winedbg.rc:72 wordpad.rc:169
+#: comctl32.rc:28 cryptui.rc:227 regedit.rc:234 taskmgr.rc:434 winedbg.rc:55
+#: winedbg.rc:67 wordpad.rc:169
 msgid "Close"
 msgstr "Затвори"
 
@@ -5052,7 +5052,7 @@ msgstr "Прекъснато от потребителя; .\n"
 msgid "File has a user-mapped section.\n"
 msgstr ""
 
-#: winerror.mc:1756 winerror.mc:3741
+#: winerror.mc:1756 winerror.mc:3746
 #, fuzzy
 msgid "Connection refused.\n"
 msgstr "LAN връзка.\n"
@@ -6702,6 +6702,11 @@ msgstr "'%s' не може да бъде намерен."
 msgid "The username could not be found.\n"
 msgstr "'%s' не може да бъде намерен."
 
+#: winerror.mc:3741
+#, fuzzy
+msgid "This network connection does not exist.\n"
+msgstr "Файлът не съществува.\n"
+
 #: localspl.rc:28 localui.rc:28 winspool.rc:27
 msgid "Local Port"
 msgstr "Локален порт"
@@ -6784,7 +6789,7 @@ msgstr "Цялата мрежа"
 msgid "Sound Selection"
 msgstr "Потвърдете изтриването на файла"
 
-#: msacm32.rc:36 winedbg.rc:73
+#: msacm32.rc:36 winedbg.rc:68
 #, fuzzy
 msgid "&Save As..."
 msgstr "Съхрани &като..."
@@ -13205,29 +13210,30 @@ msgid ""
 "sorry for the inconvenience."
 msgstr ""
 
-#: winedbg.rc:55
+#: winedbg.rc:53
 msgid ""
 "This can be caused by a problem in the program or a deficiency in Wine. You "
-"may want to check the <a href=\"http://appdb.winehq.org\">Application "
-"Database</a> for tips about running this application."
+"may want to check <a href=\"http://www.codeweavers.com/compatibility/"
+"\">http://www.codeweavers.com/compatibility/</a> for tips about running this "
+"application."
 msgstr ""
 
-#: winedbg.rc:58
+#: winedbg.rc:56
 #, fuzzy
 msgid "Show &Details"
 msgstr "&Подробности"
 
-#: winedbg.rc:63
+#: winedbg.rc:61
 #, fuzzy
 msgid "Program Error Details"
 msgstr "Program Files"
 
-#: winedbg.rc:70
+#: winedbg.rc:65
 msgid ""
 "If this problem is not present under Windows and has not been reported yet, "
 "you can save the detailed information to a file using the \"Save As\" "
-"button, then <a href=\"http://wiki.winehq.org/Bugs\">file a bug report</a> "
-"and attach that file to the report."
+"button, then <a href=\"http://www.codeweavers.com/support/tickets/enter/"
+"\">file a bug report</a> and attach that file to the report."
 msgstr ""
 
 #: winedbg.rc:35

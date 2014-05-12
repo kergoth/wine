@@ -36,6 +36,9 @@
 #ifdef HAVE_SYS_PARAM_H
 # include <sys/param.h>
 #endif
+#ifdef HAVE_SYS_SYSCALL_H
+# include <sys/syscall.h>
+#endif
 #ifdef HAVE_SYS_TIME_H
 # include <sys/time.h>
 #endif
@@ -183,6 +186,26 @@ static NTSTATUS FILE_CreateFile( PHANDLE handle, ACCESS_MASK access, POBJECT_ATT
             *handle = wine_server_ptr_handle( reply->handle );
         }
         SERVER_END_REQ;
+
+        /* BEGIN CODEWEAVERS HACK */
+        if (created)
+        {
+            static const char wininit[] = "WinInit.Ini", sc[] = { ';',';' };
+
+            if (unix_name.Length >= sizeof(wininit)-1 &&
+                !strcmp( unix_name.Buffer + unix_name.Length - (sizeof(wininit)-1), wininit ))
+            {
+                int fd;
+                if (wine_server_handle_to_fd( *handle, FILE_WRITE_DATA, &fd, NULL ) == STATUS_SUCCESS)
+                {
+                    struct stat st;
+                    if (fstat( fd, &st ) != -1 && st.st_size == 0) pwrite( fd, sc, sizeof(sc), 0 );
+                    wine_server_release_fd( *handle, fd );
+                }
+            }
+        }
+        /* END CODEWEAVERS HACK */
+
         NTDLL_free_struct_sd( sd );
         RtlFreeAnsiString( &unix_name );
     }
@@ -633,7 +656,7 @@ NTSTATUS WINAPI NtReadFile(HANDLE hFile, HANDLE hEvent,
                 lseek( unix_handle, offset->QuadPart + result, SEEK_SET );
 
             total = result;
-            status = total ? STATUS_SUCCESS : STATUS_END_OF_FILE;
+            status = (total || !length) ? STATUS_SUCCESS : STATUS_END_OF_FILE;
             goto done;
         }
     }
@@ -662,7 +685,7 @@ NTSTATUS WINAPI NtReadFile(HANDLE hFile, HANDLE hEvent,
                 {
                 case FD_TYPE_FILE:
                 case FD_TYPE_CHAR:
-                    status = STATUS_END_OF_FILE;
+                    status = length ? STATUS_END_OF_FILE : STATUS_SUCCESS;
                     goto done;
                 case FD_TYPE_SERIAL:
                     break;
@@ -1635,6 +1658,15 @@ NTSTATUS WINAPI NtSetVolumeInformationFile(
 	FileHandle,IoStatusBlock,FsInformation,Length,FsInformationClass);
 	return 0;
 }
+
+#if defined(__ANDROID__) && !defined(HAVE_FUTIMENS)
+static int futimens( int fd, const struct timespec spec[2] )
+{
+    return syscall( __NR_utimensat, fd, NULL, spec, 0 );
+}
+#define UTIME_OMIT ((1 << 30) - 2)
+#define HAVE_FUTIMENS
+#endif  /* __ANDROID__ */
 
 static NTSTATUS set_file_times( int fd, const LARGE_INTEGER *mtime, const LARGE_INTEGER *atime )
 {

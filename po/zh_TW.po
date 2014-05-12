@@ -5,7 +5,7 @@ msgstr ""
 "Project-Id-Version: Wine\n"
 "Report-Msgid-Bugs-To: http://bugs.winehq.org\n"
 "POT-Creation-Date: N/A\n"
-"PO-Revision-Date: 2012-07-28 00:06+0800\n"
+"PO-Revision-Date: 2014-02-07 13:47-0600\n"
 "Last-Translator: Wei-Lun Chao <bluebat@member.fsf.org>\n"
 "Language-Team: Chinese (traditional) <zh-l10n@linux.org.tw>\n"
 "Language: Chinese (Taiwan)\n"
@@ -378,8 +378,8 @@ msgctxt "hotkey"
 msgid "None"
 msgstr "無"
 
-#: comctl32.rc:28 cryptui.rc:227 regedit.rc:234 taskmgr.rc:434 winedbg.rc:57
-#: winedbg.rc:72 wordpad.rc:169
+#: comctl32.rc:28 cryptui.rc:227 regedit.rc:234 taskmgr.rc:434 winedbg.rc:55
+#: winedbg.rc:67 wordpad.rc:169
 msgid "Close"
 msgstr "關閉"
 
@@ -4955,7 +4955,7 @@ msgstr "作業被使用者取消。\n"
 msgid "File has a user-mapped section.\n"
 msgstr "檔案具有使用者對應區段。\n"
 
-#: winerror.mc:1756 winerror.mc:3741
+#: winerror.mc:1756 winerror.mc:3746
 msgid "Connection refused.\n"
 msgstr "連線被拒。\n"
 
@@ -6535,6 +6535,12 @@ msgstr "無法移除群組元件。\n"
 msgid "The username could not be found.\n"
 msgstr "無法找到使用者名稱。\n"
 
+#: winerror.mc:3741
+#, fuzzy
+#| msgid "The site does not exist.\n"
+msgid "This network connection does not exist.\n"
+msgstr "站臺不存在。\n"
+
 #: localspl.rc:28 localui.rc:28 winspool.rc:27
 msgid "Local Port"
 msgstr "本機連接埠"
@@ -6615,7 +6621,7 @@ msgstr "整個網路"
 msgid "Sound Selection"
 msgstr "聲音選擇"
 
-#: msacm32.rc:36 winedbg.rc:73
+#: msacm32.rc:36 winedbg.rc:68
 msgid "&Save As..."
 msgstr "另存為(&S)..."
 
@@ -13223,29 +13229,30 @@ msgid ""
 "sorry for the inconvenience."
 msgstr "程式 %s 遇到了嚴重的問題而需要關閉。我們對於造成的不便感到抱歉。"
 
-#: winedbg.rc:55
+#: winedbg.rc:53
 msgid ""
 "This can be caused by a problem in the program or a deficiency in Wine. You "
-"may want to check the <a href=\"http://appdb.winehq.org\">Application "
-"Database</a> for tips about running this application."
+"may want to check <a href=\"http://www.codeweavers.com/compatibility/"
+"\">http://www.codeweavers.com/compatibility/</a> for tips about running this "
+"application."
 msgstr ""
 "這個可能是由 Wine 中的程式問題或缺失所造成。您可能要檢查<a href=\"http://"
 "appdb.winehq.org\">應用程式資料庫</a>以獲得關於執行這個應用程式的祕訣。"
 
-#: winedbg.rc:58
+#: winedbg.rc:56
 msgid "Show &Details"
 msgstr "顯示詳細資訊(&D)"
 
-#: winedbg.rc:63
+#: winedbg.rc:61
 msgid "Program Error Details"
 msgstr "程式錯誤詳細資訊"
 
-#: winedbg.rc:70
+#: winedbg.rc:65
 msgid ""
 "If this problem is not present under Windows and has not been reported yet, "
 "you can save the detailed information to a file using the \"Save As\" "
-"button, then <a href=\"http://wiki.winehq.org/Bugs\">file a bug report</a> "
-"and attach that file to the report."
+"button, then <a href=\"http://www.codeweavers.com/support/tickets/enter/"
+"\">file a bug report</a> and attach that file to the report."
 msgstr ""
 "如果這個問題在 Windows 之下不會出現且未曾被報告，您可以使用「另存新檔」 按鈕"
 "將詳細的資訊儲存到檔案，然後<a href=\"http://wiki.winehq.org/Bugs\">發送錯誤"

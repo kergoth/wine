@@ -46,6 +46,7 @@
 #include "winnls.h"
 #include "ole2.h"
 #include "msxml6.h"
+#include "shlwapi.h"
 
 #include "msxml_private.h"
 
@@ -419,6 +420,52 @@ int xmlnode_get_inst_cnt(xmlnode *node)
     return node_get_inst_cnt(node->node);
 }
 
+/* Duplicates logic used by xmlAddChild() to determine if node will be merged with
+   existing text node. */
+static int xmlnode_will_merge(const xmlnode *parent_node, const xmlnode *child_node)
+{
+    xmlNodePtr cur = child_node->node;
+    xmlNodePtr parent = parent_node->node;
+
+   if (cur->type == XML_TEXT_NODE) {
+        /* parent itself if text node */
+	if ((parent->type == XML_TEXT_NODE) &&
+	     parent->content &&
+	    (parent->name == cur->name))
+	    return 1;
+
+        /* parent has last text node child */
+        if (parent->last && (parent->last->type == XML_TEXT_NODE) &&
+            (parent->last->name == cur->name) &&
+            (parent->last != cur))
+            return 1;
+    }
+
+    return 0;
+}
+
+/* Crossover HACK for bug 10953 */
+static int is_dotnet35sp1(void)
+{
+    static int ret;
+
+    if (!ret)
+    {
+        CHAR path[MAX_PATH], *filename;
+
+        ret = 2;
+        GetModuleFileNameA(NULL, path, sizeof(path));
+        filename = PathFindFileNameA(path);
+        if (filename)
+        {
+            if (!lstrcmpA(filename, "WFServicesReg.exe"))
+                ret = 1;
+        }
+    }
+
+    return ret == 1;
+}
+
 HRESULT node_insert_before(xmlnode *This, IXMLDOMNode *new_child, const VARIANT *ref_child,
         IXMLDOMNode **ret)
 {
@@ -502,7 +549,36 @@ HRESULT node_insert_before(xmlnode *This, IXMLDOMNode *new_child, const VARIANT 
         if (refcount) xmldoc_add_refs(This->node->doc, refcount);
         /* xmlAddChild doesn't unlink node from previous parent */
         xmlUnlinkNode(node_obj->node);
-        xmlAddChild(This->node, node_obj->node);
+
+        if (!is_dotnet35sp1())
+            xmlAddChild(This->node, node_obj->node);
+        else
+        {
+            xmlNodePtr clone = NULL;
+
+            /* currently only makes sense for a one instance per xmlNode case */
+            if (xmlnode_will_merge(This, node_obj) && refcount == 1)
+            {
+                clone = xmlCopyNode(node_obj->node, 2);
+                *(LONG*)&clone->_private = refcount;
+            }
+
+            if (xmlAddChild(This->node, node_obj->node) == node_obj->node)
+            {
+                xmlFreeNode(clone);
+            }
+            else
+            {
+                /* so libxml2 freed our node at this point, add a clone of it as an orphan */
+                if (clone)
+                {
+                    xmlSetTreeDoc(clone, This->node->doc);
+                    node_obj->node = clone;
+                    xmldoc_add_orphan(node_obj->node->doc, node_obj->node);
+                }
+            }
+        }
+
         if (refcount) xmldoc_release_refs(doc, refcount);
         node_obj->parent = This->iface;
     }

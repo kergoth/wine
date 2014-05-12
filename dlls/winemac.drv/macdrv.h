@@ -38,6 +38,10 @@
 extern BOOL skip_single_buffer_flushes DECLSPEC_HIDDEN;
 extern BOOL allow_vsync DECLSPEC_HIDDEN;
 extern BOOL allow_set_gamma DECLSPEC_HIDDEN;
+extern BOOL allow_software_rendering DECLSPEC_HIDDEN;
+
+/* CrossOver Hack 11692: Unique device names from GetMonitorInfo */
+extern BOOL unique_monitor_names DECLSPEC_HIDDEN;
 
 
 extern const char* debugstr_cf(CFTypeRef t) DECLSPEC_HIDDEN;
@@ -163,7 +167,7 @@ extern void macdrv_app_quit_requested(const macdrv_event *event) DECLSPEC_HIDDEN
 extern void macdrv_window_minimize_requested(HWND hwnd) DECLSPEC_HIDDEN;
 extern void macdrv_window_did_unminimize(HWND hwnd) DECLSPEC_HIDDEN;
 extern void macdrv_window_brought_forward(HWND hwnd) DECLSPEC_HIDDEN;
-extern BOOL query_resize_end(HWND hwnd) DECLSPEC_HIDDEN;
+extern void macdrv_window_resize_ended(HWND hwnd) DECLSPEC_HIDDEN;
 extern BOOL query_resize_start(HWND hwnd) DECLSPEC_HIDDEN;
 extern BOOL query_min_max_info(HWND hwnd) DECLSPEC_HIDDEN;
 
@@ -173,6 +177,8 @@ extern void macdrv_mouse_scroll(HWND hwnd, const macdrv_event *event) DECLSPEC_H
 extern void macdrv_release_capture(HWND hwnd, const macdrv_event *event) DECLSPEC_HIDDEN;
 
 extern void macdrv_compute_keyboard_layout(struct macdrv_thread_data *thread_data) DECLSPEC_HIDDEN;
+/* CrossOver Hack 10912: Mac Edit menu */
+extern void macdrv_edit_menu_command(const macdrv_event *event) DECLSPEC_HIDDEN;
 extern void macdrv_keyboard_changed(const macdrv_event *event) DECLSPEC_HIDDEN;
 extern void macdrv_key_event(HWND hwnd, const macdrv_event *event) DECLSPEC_HIDDEN;
 extern void macdrv_hotkey_press(const macdrv_event *event) DECLSPEC_HIDDEN;

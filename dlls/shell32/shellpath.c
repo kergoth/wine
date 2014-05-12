@@ -1636,6 +1636,21 @@ static HRESULT _SHGetUserShellFolderPath(HKEY rootKey, LPCWSTR userPrefix,
     return hr;
 }
 
+/* CrossOver HACK: Load an English string to work around restoring bottles
+ * with non-US-ASCII characters, which doesn't work when the locale has
+ * changed */
+static inline INT LoadStringW_English( HINSTANCE instance, UINT resource_id,
+                            LPWSTR buffer, INT buflen )
+{
+	INT ret;
+	LCID lcid = GetThreadLocale();
+	SetThreadLocale(MAKELCID(MAKELANGID(LANG_ENGLISH,SUBLANG_DEFAULT),SORT_DEFAULT));
+	ret = LoadStringW(instance, resource_id, buffer, buflen);
+	SetThreadLocale(lcid);
+	return ret;
+}
+
+
 /* Gets a 'semi-expanded' default value of the CSIDL with index folder into
  * pszPath, based on the entries in CSIDL_Data.  By semi-expanded, I mean:
  * - The entry's szDefaultPath may be either a string value or an integer
@@ -1685,7 +1700,7 @@ static HRESULT _SHGetDefaultValue(BYTE folder, LPWSTR pszPath)
     if (CSIDL_Data[folder].szDefaultPath &&
      IS_INTRESOURCE(CSIDL_Data[folder].szDefaultPath))
     {
-        if (LoadStringW(shell32_hInstance,
+        if (LoadStringW_English(shell32_hInstance,
          LOWORD(CSIDL_Data[folder].szDefaultPath), resourcePath, MAX_PATH))
         {
             hr = S_OK;
@@ -2039,11 +2054,9 @@ static HRESULT _SHExpandEnvironmentStrings(LPCWSTR szSrc, LPWSTR szDest)
         }
         else if (!strncmpiW(szTemp, UserProfileW, strlenW(UserProfileW)))
         {
-            WCHAR userName[MAX_PATH];
-            DWORD userLen = MAX_PATH;
+            static const WCHAR userName[] = {'c','r','o','s','s','o','v','e','r',0};
 
             strcpyW(szDest, szProfilesPrefix);
-            GetUserNameW(userName, &userLen);
             PathAppendW(szDest, userName);
             PathAppendW(szDest, szTemp + strlenW(UserProfileW));
         }
@@ -2517,14 +2530,20 @@ static HRESULT _SHRegisterCommonShellFolders(void)
  *  Success: TRUE,
  *  Failure: FALSE
  */
-static inline BOOL _SHAppendToUnixPath(char *szBasePath, LPCWSTR pwszSubPath) {
+static inline BOOL _SHAppendToUnixPath(char *szBasePath, LPCWSTR pwszSubPath, int localize) {
     WCHAR wszSubPath[MAX_PATH];
     int cLen = strlen(szBasePath);
     char *pBackslash;
 
     if (IS_INTRESOURCE(pwszSubPath)) {
-        if (!LoadStringW(shell32_hInstance, LOWORD(pwszSubPath), wszSubPath, MAX_PATH)) {
-            /* Fall back to hard coded defaults. */
+        int rc;
+        if (localize)
+            rc=LoadStringW(shell32_hInstance, LOWORD(pwszSubPath), wszSubPath, MAX_PATH);
+        else
+            rc=LoadStringW_English(shell32_hInstance, LOWORD(pwszSubPath), wszSubPath, MAX_PATH);
+        if (!rc) {
+            /* Fall back to hardcoded defaults. */
+            WARN("Falling back to hardcoded defaults\n");
             switch (LOWORD(pwszSubPath)) {
                 case IDS_PERSONAL:
                     lstrcpyW(wszSubPath, PersonalW);
@@ -2561,88 +2580,182 @@ static inline BOOL _SHAppendToUnixPath(char *szBasePath, LPCWSTR pwszSubPath) {
     return TRUE;
 }
 
+typedef struct
+{
+    UINT  ids;
+    int   csidl;
+    UINT unix_location[3];
+} folder_mapping_t;
+
+static const folder_mapping_t folder_mappings[]={
+    { /* Must be the first in the list */
+      IDS_PERSONAL,
+      CSIDL_PERSONAL,
+      { IDS_PERSONAL,         /* 'My Documents' */
+        IDS_COMMON_DOCUMENTS, /* 'Documents' (used on SUSE, Mandriva, ...) */
+        0
+      }
+    },
+    { IDS_MYPICTURES,
+      CSIDL_MYPICTURES,
+      { IDS_MYPICTURES,       /* 'My Pictures' */
+        WINE_IDS_PICTURES,    /* 'Pictures' (used on the Mac) */
+        0
+      }
+    },
+    { IDS_MYVIDEOS,
+      CSIDL_MYVIDEO,
+      { IDS_MYVIDEOS,         /* 'My Videos' */
+        WINE_IDS_MOVIES,      /* 'Movies' (used on the Mac) */
+        0
+      }
+    },
+    { IDS_MYMUSIC,
+      CSIDL_MYMUSIC,
+      { IDS_MYMUSIC,          /* 'My Music' */
+        WINE_IDS_MUSIC,       /* 'Music' (used on the Mac) */
+        0
+      }
+    }
+};
+
 /******************************************************************************
  * _SHCreateSymbolicLinks  [Internal]
  * 
  * Sets up symbol links for various shell folders to point into the users home
  * directory. We do an educated guess about what the user would probably want:
- * - If there is a 'My Documents' directory in $HOME, the user probably wants
- *   wine's 'My Documents' to point there. Furthermore, we imply that the user
- *   is a Windows lover and has no problem with wine creating 'My Pictures',
- *   'My Music' and 'My Videos' subfolders under '$HOME/My Documents', if those
- *   do not already exits. We put appropriate symbolic links in place for those,
- *   too.
- * - If there is no 'My Documents' directory in $HOME, we let 'My Documents'
- *   point directly to $HOME. We assume the user to be a unix hacker who does not
- *   want wine to create anything anywhere besides the .wine directory. So, if
- *   there already is a 'My Music' directory in $HOME, we symlink the 'My Music'
- *   shell folder to it. But if not, then we check XDG_MUSIC_DIR - "well known"
- *   directory, and try to link to that. If that fails, then we symlink to
- *   $HOME directly. The same holds fo 'My Pictures' and 'My Videos'.
- * - The Desktop shell folder is symlinked to XDG_DESKTOP_DIR. If that does not
- *   exist, then we try '$HOME/Desktop'. If that does not exist, then we leave
- *   it alone.
- * ('My Music',... above in fact means LoadString(IDS_MYMUSIC))
+ * - If there is a 'My Documents' or 'Documents' directory in $HOME, the user
+ *   probably wants Wine's 'My Documents' to point there. Furthermore, we
+ *   assume that the user is a Windows lover and has no problem with Wine
+ *   creating 'My Pictures', 'My Music' and 'My Video' subfolders under
+ *   '$HOME/My Documents', if those do not already exits. We put appropriate
+ *   symbolic links in place for those too.
+ * - If there is no 'My Documents' directory in $HOME, we let it point
+ *   directly to $HOME. We assume the user to be a Unix hacker who does not
+ *   want Wine to create anything anywhere besides the .wine directory. So, if
+ *   there already is a 'My Music' directory in $HOME, we symlink the
+ *   'My Music' shell folder to it. But if not, we symlink it to $HOME
+ *   directly. The same holds for 'My Pictures' and 'My Video'.
+ * - The Desktop shell folder is symlinked to '$HOME/Desktop', if that does
+ *   exists and left alone if not.
+ * ('My Music', ... above in fact means LoadString(IDS_MYMUSIC))
  */
 static void _SHCreateSymbolicLinks(void)
 {
-    UINT aidsMyStuff[] = { IDS_MYPICTURES, IDS_MYVIDEOS, IDS_MYMUSIC }, i;
+    UINT aidsMyStuff[] = { IDS_MYPICTURES, IDS_MYVIDEOS, IDS_MYMUSIC };
     int acsidlMyStuff[] = { CSIDL_MYPICTURES, CSIDL_MYVIDEO, CSIDL_MYMUSIC };
-    static const char * const xdg_dirs[] = { "PICTURES", "VIDEOS", "MUSIC", "DESKTOP" };
-    static const unsigned int num = sizeof(xdg_dirs) / sizeof(xdg_dirs[0]);
     WCHAR wszTempPath[MAX_PATH];
     char szPersonalTarget[FILENAME_MAX], *pszPersonal;
     char szMyStuffTarget[FILENAME_MAX], *pszMyStuff;
+#   define szLinuxDesktop  "/My Linux Desktop"
+#   define szMacDesktop    "/My Mac Desktop"
+#   define szNativeDesktop "/My Native Desktop"
+    static const char* szDesktops[] = {szLinuxDesktop,
+                                       szMacDesktop,
+                                       szNativeDesktop,
+                                       NULL};
+    const char* pszNativeDesktop;
+    char *pszDesktopLink;
     char szDesktopTarget[FILENAME_MAX], *pszDesktop;
-    struct stat statFolder;
     const char *pszHome;
+    struct stat statHome, statFolder;
+    static const int MDL_DIRS         = 1;
+    static const int MDL_FLAT_LINKS   = 2;
+    static const int MDL_NESTED_LINKS = 3;
+    int layout, localize, i, u;
     HRESULT hr;
-    char ** xdg_results;
-    char * xdg_desktop_dir;
 
     /* Create all necessary profile sub-dirs up to 'My Documents' and get the unix path. */
     hr = SHGetFolderPathW(NULL, CSIDL_PERSONAL|CSIDL_FLAG_CREATE, NULL,
-                          SHGFP_TYPE_DEFAULT, wszTempPath);
+                          SHGFP_TYPE_CURRENT, wszTempPath);
     if (FAILED(hr)) return;
     pszPersonal = wine_get_unix_file_name(wszTempPath);
     if (!pszPersonal) return;
-
-    hr = XDG_UserDirLookup(xdg_dirs, num, &xdg_results);
-    if (FAILED(hr)) xdg_results = NULL;
+    /* SHGetFolderPathW() creates 'My Documents' as a directory which may
+     * not be what we want. But we need to rmdir() the folder anyway so we
+     * get another chance to symlink during upgrades in case the folder is
+     * not used yet.
+     */
+    rmdir(pszPersonal);
 
     pszHome = getenv("HOME");
-    if (pszHome && !stat(pszHome, &statFolder) && S_ISDIR(statFolder.st_mode)) {
-        strcpy(szPersonalTarget, pszHome);
-        if (_SHAppendToUnixPath(szPersonalTarget, MAKEINTRESOURCEW(IDS_PERSONAL)) &&
-            !stat(szPersonalTarget, &statFolder) && S_ISDIR(statFolder.st_mode))
+    if (!pszHome || !strcmp(pszHome, "/") || stat(pszHome, &statHome) ||
+        !S_ISDIR(statHome.st_mode) || statHome.st_uid != geteuid())
+    {
+        /* $HOME does not exist or is otherwise unusable */
+        pszHome=NULL;
+    }
+
+    /* Create and / or figure out the 'My Documents' layout */
+    localize=1;
+    if (stat(pszPersonal, &statFolder) || !S_ISDIR(statFolder.st_mode) ||
+        statFolder.st_uid != geteuid())
+    {
+        /* Wine's 'My Documents' does not exist or is unusable.
+         * Delete it in case it is a dead link, then recreate it.
+         */
+        unlink(pszPersonal);
+
+        if (!pszHome)
         {
-            /* '$HOME/My Documents' exists. Create 'My Pictures', 'My Videos' and 
-             * 'My Music' subfolders or fail silently if they already exist. */
-            for (i = 0; i < sizeof(aidsMyStuff)/sizeof(aidsMyStuff[0]); i++) {
-                strcpy(szMyStuffTarget, szPersonalTarget);
-                if (_SHAppendToUnixPath(szMyStuffTarget, MAKEINTRESOURCEW(aidsMyStuff[i])))
-                    mkdir(szMyStuffTarget, 0777);
-            }
-        } 
+            /* $HOME does not exist so just create 'My Documents' as a
+             * directory in the c: drive.
+             */
+            layout=MDL_DIRS;
+            mkdir(pszPersonal, S_IRWXU|S_IRWXG|S_IRWXO);
+        }
         else
         {
-            /* '$HOME/My Documents' doesn't exists, but '$HOME' does. */ 
-            strcpy(szPersonalTarget, pszHome);
+            /* Try to find the Unix equivalent to 'My Documents' */
+            layout=MDL_FLAT_LINKS;
+            for (localize=1; localize >= 0; localize--)
+            {
+                for (u=0; folder_mappings[0].unix_location[u] != 0; u++)
+                {
+                    strcpy(szPersonalTarget, pszHome);
+                    if (_SHAppendToUnixPath(szPersonalTarget, MAKEINTRESOURCEW(folder_mappings[0].unix_location[u]), localize) &&
+                        !stat(szPersonalTarget, &statFolder) &&
+                        S_ISDIR(statFolder.st_mode) &&
+                        statFolder.st_uid == geteuid())
+                    {
+                        layout=MDL_NESTED_LINKS;
+                        symlink(szPersonalTarget, pszPersonal);
+                        break;
+                    }
+                }
+                if (layout != MDL_FLAT_LINKS)
+                    break;
+            }
+            if (layout == MDL_FLAT_LINKS)
+            {
+                strcpy(szPersonalTarget, pszHome);
+                symlink(szPersonalTarget, pszPersonal);
+                localize=1;
+            }
         }
-
-        /* Replace 'My Documents' directory with a symlink of fail silently if not empty. */
-        rmdir(pszPersonal);
-        symlink(szPersonalTarget, pszPersonal);
+    }
+    else if (pszHome && statFolder.st_dev == statHome.st_dev &&
+             statFolder.st_ino == statHome.st_ino)
+    {
+        /* Wine's 'My Documents' is obviously a symbolic link to $HOME */
+        strcpy(szPersonalTarget, pszHome);
+        layout=MDL_FLAT_LINKS;
     }
     else
     {
-        /* '$HOME' doesn't exist. Create 'My Pictures', 'My Videos' and 'My Music' subdirs
-         * in '%USERPROFILE%\\My Documents' or fail silently if they already exist. */
-        strcpy(szPersonalTarget, pszPersonal);
-        for (i = 0; i < sizeof(aidsMyStuff)/sizeof(aidsMyStuff[0]); i++) {
-            strcpy(szMyStuffTarget, szPersonalTarget);
-            if (_SHAppendToUnixPath(szMyStuffTarget, MAKEINTRESOURCEW(aidsMyStuff[i])))
-                mkdir(szMyStuffTarget, 0777);
+        lstat(pszPersonal, &statFolder);
+        if (S_ISLNK(statFolder.st_mode) &&
+            readlink(pszPersonal, szPersonalTarget, sizeof(szPersonalTarget)) > 0)
+        {
+            /* Wine's 'My Documents' is a symbolic link, presumably to a
+             * $HOME subdirectory equivalent to 'My Documents'
+             */
+            layout=MDL_NESTED_LINKS;
+        }
+        else
+        {
+            /* Wine's 'My Documents' is a simple directory */
+            layout=MDL_DIRS;
         }
     }
 
@@ -2654,64 +2767,123 @@ static void _SHCreateSymbolicLinks(void)
         if (FAILED(hr)) continue;
         pszMyStuff = wine_get_unix_file_name(wszTempPath);
         if (!pszMyStuff) continue;
-        
-        strcpy(szMyStuffTarget, szPersonalTarget);
-        if (_SHAppendToUnixPath(szMyStuffTarget, MAKEINTRESOURCEW(aidsMyStuff[i])) &&
-            !stat(szMyStuffTarget, &statFolder) && S_ISDIR(statFolder.st_mode))
+        /* See comment about rmdir(pszPersonal) above */
+        rmdir(pszMyStuff);
+
+        if (!stat(pszMyStuff, &statFolder) && S_ISDIR(statFolder.st_mode) &&
+            statFolder.st_uid == geteuid())
         {
-            /* If there's a 'My Whatever' directory where 'My Documents' links to, link to it. */
-            rmdir(pszMyStuff);
-            symlink(szMyStuffTarget, pszMyStuff);
-        } 
+            /* 'My Stuff' already exists, so skip it */
+            HeapFree(GetProcessHeap(), 0, pszMyStuff);
+            continue;
+        }
+        /* See comment about unlink(pszPersonal) above */
+        unlink(pszMyStuff);
+
+        if (layout == MDL_DIRS)
+        {
+            mkdir(pszMyStuff, S_IRWXU|S_IRWXG|S_IRWXO);
+        }
         else
         {
-            rmdir(pszMyStuff);
-            if (xdg_results && xdg_results[i])
+            int l, u;
+            for (l=1; l >= 0; l--)
             {
-                /* the folder specified by XDG_XXX_DIR exists, link to it. */
-                symlink(xdg_results[i], pszMyStuff);
+                for (u=0; folder_mappings[i].unix_location[u] != 0; u++)
+                {
+                    strcpy(szMyStuffTarget, szPersonalTarget);
+                    if (_SHAppendToUnixPath(szMyStuffTarget, MAKEINTRESOURCEW(folder_mappings[i].unix_location[u]), l) &&
+                        !stat(szMyStuffTarget, &statFolder) &&
+                        S_ISDIR(statFolder.st_mode) &&
+                        statFolder.st_uid == geteuid())
+                        break;
+                    *szMyStuffTarget='\0';
+                }
+                if (*szMyStuffTarget)
+                    break;
+            }
+            if (*szMyStuffTarget)
+            {
+                /* 'My Stuff' already exists on the Unix side, so link to it */
+                symlink(szMyStuffTarget, pszMyStuff);
+            }
+            else if (layout == MDL_FLAT_LINKS)
+            {
+                /* 'My Stuff' does not exist on the Unix side, so just
+                 * link to $HOME.
+                 */
+                symlink(pszHome, pszMyStuff);
             }
             else
             {
-                /* Else link to where 'My Documents' itself links to. */
-                symlink(szPersonalTarget, pszMyStuff);
+                /* 'My Stuff' does not exist on the Unix side. So create it
+                 * with the 'best' localization as per the 'nested' layout.
+                 */
+                strcpy(szMyStuffTarget, szPersonalTarget);
+                if (!_SHAppendToUnixPath(szMyStuffTarget, MAKEINTRESOURCEW(folder_mappings[i].ids), localize))
+                {
+                    /* This should really not happen */
+                    mkdir(pszMyStuff, S_IRWXU|S_IRWXG|S_IRWXO);
+                }
+                else
+                {
+                    mkdir(szMyStuffTarget, S_IRWXU|S_IRWXG|S_IRWXO);
+                    symlink(szMyStuffTarget, pszMyStuff);
+                }
             }
         }
         HeapFree(GetProcessHeap(), 0, pszMyStuff);
     }
 
     /* Last but not least, the Desktop folder */
-    if (pszHome)
-        strcpy(szDesktopTarget, pszHome);
-    else
-        strcpy(szDesktopTarget, pszPersonal);
     HeapFree(GetProcessHeap(), 0, pszPersonal);
-
-    xdg_desktop_dir = xdg_results ? xdg_results[num - 1] : NULL;
-    if (xdg_desktop_dir ||
-        (_SHAppendToUnixPath(szDesktopTarget, DesktopW) &&
-        !stat(szDesktopTarget, &statFolder) && S_ISDIR(statFolder.st_mode)))
+    hr = SHGetFolderPathW(NULL, CSIDL_DESKTOPDIRECTORY|CSIDL_FLAG_CREATE,
+                          NULL, SHGFP_TYPE_CURRENT, wszTempPath);
+    if (SUCCEEDED(hr) && (pszDesktop = wine_get_unix_file_name(wszTempPath))) 
     {
-        hr = SHGetFolderPathW(NULL, CSIDL_DESKTOPDIRECTORY|CSIDL_FLAG_CREATE, NULL,
-                              SHGFP_TYPE_DEFAULT, wszTempPath);
-        if (SUCCEEDED(hr) && (pszDesktop = wine_get_unix_file_name(wszTempPath))) 
+#ifdef linux
+        pszNativeDesktop=szLinuxDesktop;
+#elif defined(__APPLE__)
+        pszNativeDesktop=szMacDesktop;
+#else
+        pszNativeDesktop=szNativeDesktop;
+#endif
+        for (i=0; szDesktops[i]; i++)
         {
-            rmdir(pszDesktop);
-            if (xdg_desktop_dir)
-                symlink(xdg_desktop_dir, pszDesktop);
-            else
-                symlink(szDesktopTarget, pszDesktop);
-            HeapFree(GetProcessHeap(), 0, pszDesktop);
-        }
-    }
+            pszDesktopLink = HeapAlloc(GetProcessHeap(), 0, strlen(pszDesktop) + strlen(szDesktops[i])+1);
+            strcpy(pszDesktopLink, pszDesktop);
+            strcat(pszDesktopLink, szDesktops[i]);
+            rmdir(pszDesktopLink);
+            if (stat(pszDesktopLink, &statFolder) ||
+                !S_ISDIR(statFolder.st_mode) || statFolder.st_uid != geteuid())
+            {
+                /* Delete the other platforms' links */
+                unlink(pszDesktopLink);
 
-    /* Free resources allocated by XDG_UserDirLookup() */
-    if (xdg_results)
-    {
-        for (i = 0; i < num; i++)
-            HeapFree(GetProcessHeap(), 0, xdg_results[i]);
-        HeapFree(GetProcessHeap(), 0, xdg_results);
+                /* And create one for the current platform */
+                if (strcmp(szDesktops[i], pszNativeDesktop) == 0 && pszHome)
+                {
+                    strcpy(szDesktopTarget, pszHome);
+                    if (_SHAppendToUnixPath(szDesktopTarget, DesktopW, 0) &&
+                        !stat(szDesktopTarget, &statFolder) &&
+                        S_ISDIR(statFolder.st_mode) &&
+                        statFolder.st_uid == geteuid())
+                    {
+                        symlink(szDesktopTarget, pszDesktopLink);
+                    }
+                }
+            }
+            HeapFree(GetProcessHeap(), 0, pszDesktopLink);
+        }
+
+        HeapFree(GetProcessHeap(), 0, pszDesktop);
     }
+}
+
+void WINAPI wine_update_symbolic_links(HWND hwnd, HINSTANCE handle, LPCWSTR cmdline, INT show)
+{
+    TRACE("\n");
+    _SHCreateSymbolicLinks();
 }
 
 /******************************************************************************
@@ -2839,6 +3011,7 @@ HRESULT SHELL_RegisterShellFolders(void)
      * 'My Videos', 'My Music' and 'Desktop' in advance, so that the
      * _SHRegister*ShellFolders() functions will find everything nice and clean
      * and thus will not attempt to create them in the profile directory. */
+    /* In CrossOver Desktop is not a symlink */
     _SHCreateSymbolicLinks();
     
     hr = _SHRegisterUserShellFolders(TRUE);

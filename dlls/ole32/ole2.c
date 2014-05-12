@@ -2428,11 +2428,11 @@ static void OLEDD_TrackStateChange(TrackerWindowInfo* trackerInfo)
 	 */
         case DRAGDROP_S_DROP:
           if (*trackerInfo->pdwEffect != DROPEFFECT_NONE)
-            IDropTarget_Drop(trackerInfo->curDragTarget,
-                             trackerInfo->dataObject,
-                             trackerInfo->dwKeyState,
-                             trackerInfo->curMousePos,
-                             trackerInfo->pdwEffect);
+            trackerInfo->returnValue =  IDropTarget_Drop(trackerInfo->curDragTarget,
+                                                         trackerInfo->dataObject,
+                                                         trackerInfo->dwKeyState,
+                                                         trackerInfo->curMousePos,
+                                                         trackerInfo->pdwEffect);
           else
             IDropTarget_DragLeave(trackerInfo->curDragTarget);
           break;
@@ -2598,6 +2598,18 @@ HRESULT WINAPI OleCreate(
         debugstr_guid(riid), renderopt, pFormatEtc, pClientSite, pStg, ppvObj);
 
     hres = CoCreateInstance(rclsid, 0, CLSCTX_INPROC_SERVER|CLSCTX_INPROC_HANDLER, riid, (LPVOID*)&pUnk);
+
+    /*
+     * If that fails, as it will most times, load the default
+     * OLE handler.
+     */
+    if (FAILED(hres))
+    {
+        hres = OleCreateDefaultHandler(rclsid,
+				   NULL,
+				   riid,
+				   (void**)&pUnk);
+    }
 
     if (SUCCEEDED(hres))
         hres = IStorage_SetClass(pStg, rclsid);

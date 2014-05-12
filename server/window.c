@@ -34,6 +34,8 @@
 
 #include "object.h"
 #include "request.h"
+#include "file.h"
+#include "handle.h"
 #include "thread.h"
 #include "process.h"
 #include "user.h"
@@ -73,6 +75,7 @@ struct window
     rectangle_t      client_rect;     /* client rectangle (relative to parent client area) */
     struct region   *win_region;      /* region for shaped windows (relative to window rect) */
     struct region   *update_region;   /* update region (relative to window rect) */
+    struct mapping  *surface;         /* memory mapping for the window surface */
     unsigned int     style;           /* window style */
     unsigned int     ex_style;        /* window extended style */
     unsigned int     id;              /* window id */
@@ -478,6 +481,7 @@ static struct window *create_window( struct window *parent, struct window *owner
     win->last_active    = win->handle;
     win->win_region     = NULL;
     win->update_region  = NULL;
+    win->surface        = NULL;
     win->style          = 0;
     win->ex_style       = 0;
     win->id             = 0;
@@ -1584,22 +1588,25 @@ static struct region *expose_window( struct window *win, const rectangle_t *old_
         }
     }
 
-    if (win->parent && !is_desktop_window( win->parent ))
+    if (win->parent)
     {
         /* make it relative to the old window pos for subtracting */
         offset_region( new_vis_rgn, win->window_rect.left - old_window_rect->left,
                        win->window_rect.top - old_window_rect->top  );
 
-        if ((win->parent->style & WS_CLIPCHILDREN) ?
-            subtract_region( new_vis_rgn, old_vis_rgn, new_vis_rgn ) :
-            xor_region( new_vis_rgn, old_vis_rgn, new_vis_rgn ))
+        if (is_desktop_window( win->parent ))
+            union_region( new_vis_rgn, old_vis_rgn, new_vis_rgn );
+        else if (win->parent->style & WS_CLIPCHILDREN)
+            subtract_region( new_vis_rgn, old_vis_rgn, new_vis_rgn );
+        else
+            xor_region( new_vis_rgn, old_vis_rgn, new_vis_rgn );
+
+        if (!is_region_empty( new_vis_rgn ))
         {
-            if (!is_region_empty( new_vis_rgn ))
-            {
-                /* make it relative to parent */
-                offset_region( new_vis_rgn, old_window_rect->left, old_window_rect->top );
-                redraw_window( win->parent, new_vis_rgn, 0, RDW_INVALIDATE | RDW_ERASE | RDW_ALLCHILDREN );
-            }
+            /* make it relative to parent */
+            offset_region( new_vis_rgn, old_window_rect->left, old_window_rect->top );
+            redraw_window( win->parent, new_vis_rgn, 0, RDW_INVALIDATE | RDW_ERASE |
+                           (is_desktop_window( win->parent ) ? RDW_NOCHILDREN : RDW_ALLCHILDREN) );
         }
     }
     free_region( new_vis_rgn );
@@ -1842,6 +1849,7 @@ void destroy_window( struct window *win )
         else desktop->msg_window = NULL;
     }
     detach_window_thread( win );
+    if (win->surface) release_object( win->surface );
     if (win->win_region) free_region( win->win_region );
     if (win->update_region) free_region( win->update_region );
     if (win->class) release_class( win->class );
@@ -2188,6 +2196,7 @@ DECL_HANDLER(get_window_tree)
 DECL_HANDLER(set_window_pos)
 {
     rectangle_t window_rect, client_rect, visible_rect;
+    struct mapping *surface = NULL;
     struct window *previous = NULL;
     struct window *top, *win = get_window( req->handle );
     unsigned int flags = req->swp_flags;
@@ -2233,6 +2242,14 @@ DECL_HANDLER(set_window_pos)
         set_error( STATUS_INVALID_PARAMETER );
         return;
     }
+
+    if (req->surface &&
+        !(surface = get_mapping_obj( current->process, req->surface,
+                                     SECTION_QUERY | SECTION_MAP_READ | SECTION_MAP_WRITE )))
+        return;
+
+    if (win->surface) release_object( win->surface );
+    win->surface = surface;
 
     window_rect = visible_rect = req->window;
     client_rect = req->client;
@@ -2435,6 +2452,10 @@ DECL_HANDLER(get_visible_region)
         reply->win_rect.bottom = win->client_rect.bottom - win->client_rect.top;
     }
     reply->paint_flags = win->paint_flags & PAINT_CLIENT_FLAGS;
+
+    if (win->surface)
+        reply->surface = alloc_handle( current->process, win->surface,
+                                       SECTION_QUERY | SECTION_MAP_READ | SECTION_MAP_WRITE, 0 );
 }
 
 

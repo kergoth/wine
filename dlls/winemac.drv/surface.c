@@ -139,6 +139,14 @@ static RECT *macdrv_surface_get_bounds(struct window_surface *window_surface)
 }
 
 /***********************************************************************
+ *              macdrv_surface_get_mapping
+ */
+static HANDLE macdrv_surface_get_mapping( struct window_surface *window_surface )
+{
+    return 0;
+}
+
+/***********************************************************************
  *              macdrv_surface_set_region
  */
 static void macdrv_surface_set_region(struct window_surface *window_surface, HRGN region)
@@ -219,6 +227,7 @@ static const struct window_surface_funcs macdrv_surface_funcs =
     macdrv_surface_unlock,
     macdrv_surface_get_bitmap_info,
     macdrv_surface_get_bounds,
+    macdrv_surface_get_mapping,
     macdrv_surface_set_region,
     macdrv_surface_flush,
     macdrv_surface_destroy,
