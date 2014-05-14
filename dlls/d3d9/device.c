@@ -807,6 +807,21 @@ static HRESULT WINAPI d3d9_device_CreateVolumeTexture(IDirect3DDevice9Ex *iface,
             usage, format, pool, texture, shared_handle);
 
     *texture = NULL;
+
+    /* Fail if the requested format is a DXTn format */
+    switch (format)
+    {
+        case D3DFMT_DXT1:
+        case D3DFMT_DXT2:
+        case D3DFMT_DXT3:
+        case D3DFMT_DXT4:
+        case D3DFMT_DXT5:
+            WARN("Trying to create a volume texture in DXTn format - not supported.\n");
+            return D3DERR_INVALIDCALL;
+        default:
+            break;
+    }
+
     if (shared_handle)
     {
         if (!device->d3d_parent->extended)
