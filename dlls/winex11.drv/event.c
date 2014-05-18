@@ -981,6 +981,7 @@ void X11DRV_ConfigureNotify( HWND hwnd, XEvent *xev )
     HWND parent;
     BOOL root_coords;
     int cx, cy, x = event->x, y = event->y;
+    DWORD ex_style;
 
     if (!hwnd) return;
     if (!(data = X11DRV_get_win_data( hwnd ))) return;
@@ -1021,6 +1022,14 @@ void X11DRV_ConfigureNotify( HWND hwnd, XEvent *xev )
 
     X11DRV_X_to_window_rect( data, &rect );
     if (root_coords) MapWindowPoints( 0, parent, (POINT *)&rect, 2 );
+
+    ex_style = GetWindowLongW( hwnd, GWL_EXSTYLE );
+    if (ex_style & WS_EX_TRANSPARENT)
+    {
+        FIXME("transparent window, fixing window rect\n");
+        rect.right = rect.left;
+        rect.bottom = rect.top;
+    }
 
     /* Compare what has changed */
 
