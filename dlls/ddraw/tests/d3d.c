@@ -1128,8 +1128,10 @@ static void ViewportTest(void)
 static void Direct3D1Test(void)
 {
     HRESULT hr;
+    IDirect3DViewport2 *Viewport2;
     D3DEXECUTEBUFFERDESC desc;
     D3DVIEWPORT vp_data;
+    D3DVIEWPORT2 vp2_data;
     D3DINSTRUCTION *instr;
     D3DBRANCH *branch;
     IDirect3D *Direct3D_alt;
@@ -1480,6 +1482,86 @@ static void Direct3D1Test(void)
                                              &transformdata, 0,
                                              &i);
     ok(hr == DDERR_INVALIDPARAMS, "IDirect3DViewport_TransformVertices returned %08x\n", hr);
+
+    /* Test transformations when viewport was set up with IDirect3DViewport2::SetViewport2 */
+    hr = IDirect3DViewport_QueryInterface(Viewport, &IID_IDirect3DViewport2, (void**) &Viewport2);
+    ok(hr == D3D_OK, "QueryInterface returned: %x\n", hr);
+
+    memset(&transformdata, 0, sizeof(transformdata));
+    transformdata.dwSize = sizeof(transformdata);
+    transformdata.lpIn = testverts;
+    transformdata.dwInSize = sizeof(testverts[0]);
+    transformdata.lpOut = out;
+    transformdata.dwOutSize = sizeof(out[0]);
+    transformdata.lpHOut = NULL;
+
+    vp2_data.dwSize = sizeof(vp2_data);
+    vp2_data.dwX = 0;
+    vp2_data.dwY = 0;
+    vp2_data.dwWidth = 600;
+    vp2_data.dwHeight = 400;
+    vp2_data.dvClipX = -1.f;
+    vp2_data.dvClipY = 1.f;
+    vp2_data.dvClipWidth = 2.f;
+    vp2_data.dvClipHeight = 2.f;
+    vp2_data.dvMinZ = 0.f;
+    vp2_data.dvMaxZ = 1.f;
+    hr = IDirect3DViewport2_SetViewport2(Viewport2, &vp2_data);
+    ok(hr == D3D_OK, "IDirect3DViewport_SetViewport returned %08x\n", hr);
+
+    memset(out, 0xcc, sizeof(out));
+    hr = IDirect3DViewport2_TransformVertices(Viewport2, sizeof(testverts) / sizeof(testverts[0]),
+                                              &transformdata, D3DTRANSFORM_UNCLIPPED,
+                                              &i);
+    ok(hr == D3D_OK, "IDirect3DViewport_TransformVertices returned %08x\n", hr);
+    ok(i == 0, "Offscreen is %d\n", i);
+
+    for(i = 0; i < sizeof(testverts) / sizeof(testverts[0]); i++) {
+        static const struct v_out cmp[] = {
+            {300.0, 200.0,  0.0, 1}, {600.0,   0.0,  1.0, 1}, {  0.0, 400.0, -1.0, 1},
+            {450.0, 100.0,  0.5, 1}, {150.0, 300.0, -0.5, 1}, {150.0, 300.0,  0.0, 1}
+        };
+        ok(cmp[i].x == out[i].x && cmp[i].y == out[i].y &&
+           cmp[i].z == out[i].z && cmp[i].rhw == out[i].rhw,
+           "Vertex %d differs. Got %f %f %f %f, expected %f %f %f %f\n", i + 1,
+           out[i].x, out[i].y, out[i].z, out[i].rhw,
+           cmp[i].x, cmp[i].y, cmp[i].z, cmp[i].rhw);
+    }
+
+    vp2_data.dwSize = sizeof(vp2_data);
+    vp2_data.dwX = 400;
+    vp2_data.dwY = 50;
+    vp2_data.dwWidth = 300;
+    vp2_data.dwHeight = 200;
+    vp2_data.dvClipX = -2.f;
+    vp2_data.dvClipY = 3.f;
+    vp2_data.dvClipWidth = 3.f;
+    vp2_data.dvClipHeight = 8.f;
+    vp2_data.dvMinZ = 0.5f;
+    vp2_data.dvMaxZ = -3.5f;
+    hr = IDirect3DViewport2_SetViewport2(Viewport2, &vp2_data);
+    ok(hr == D3D_OK, "IDirect3DViewport_SetViewport returned %08x\n", hr);
+
+    memset(out, 0xcc, sizeof(out));
+    hr = IDirect3DViewport2_TransformVertices(Viewport2, sizeof(testverts) / sizeof(testverts[0]),
+                                              &transformdata, D3DTRANSFORM_UNCLIPPED,
+                                              &i);
+    ok(hr == D3D_OK, "IDirect3DViewport_TransformVertices returned %08x\n", hr);
+    ok(i == 0, "Offscreen is %d\n", i);
+
+    for(i = 0; i < sizeof(testverts) / sizeof(testverts[0]); i++) {
+        static const struct v_out cmp[] = {
+            {600.0, 125.0, 0.125, 1}, {700.0, 100.0, -0.125, 1}, {500.0, 150.0, 0.375, 1},
+            {650.0, 112.5, 0.0  , 1}, {550.0, 137.5,  0.25 , 1}, {550.0, 137.5, 0.125, 1}
+        };
+        ok(cmp[i].x == out[i].x && cmp[i].y == out[i].y &&
+           cmp[i].z == out[i].z && cmp[i].rhw == out[i].rhw,
+           "Vertex %d differs. Got %f %f %f %f, expected %f %f %f %f\n", i + 1,
+           out[i].x, out[i].y, out[i].z, out[i].rhw,
+           cmp[i].x, cmp[i].y, cmp[i].z, cmp[i].rhw);
+    }
+
+    IDirect3DViewport2_Release(Viewport2);
 
     hr = IDirect3DDevice_DeleteViewport(Direct3DDevice1, Viewport);
     ok(hr == D3D_OK, "IDirect3DDevice_DeleteViewport returned %08x\n", hr);
