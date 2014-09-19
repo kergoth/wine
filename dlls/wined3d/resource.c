@@ -219,8 +219,9 @@ BOOL wined3d_resource_allocate_sysmem(struct wined3d_resource *resource)
     void **p;
     SIZE_T align = RESOURCE_ALIGNMENT - 1 + sizeof(*p);
     void *mem;
+    UINT size = resource->size * 2;
 
-    if (!(mem = HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, resource->size + align)))
+    if (!(mem = HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, size + align)))
         return FALSE;
 
     p = (void **)(((ULONG_PTR)mem + align) & ~(RESOURCE_ALIGNMENT - 1)) - 1;
