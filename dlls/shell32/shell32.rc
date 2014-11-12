@@ -341,6 +341,13 @@ FONT 8, "MS Shell Dlg"
  PUSHBUTTON "&Browse...", IDC_RUNDLG_BROWSE, 180, 63, 50, 14, WS_TABSTOP
 }
 
+STRINGTABLE
+{
+	WINE_IDS_PICTURES           "Pictures"
+	WINE_IDS_MUSIC              "Music"
+	WINE_IDS_MOVIES             "Movies"
+}
+
 LANGUAGE LANG_NEUTRAL, SUBLANG_NEUTRAL
 
 /* @makedep: shell32.rgs */

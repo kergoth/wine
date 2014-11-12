@@ -90,6 +90,7 @@ BOOL collect_connections(collect_type_t) DECLSPEC_HIDDEN;
 typedef struct
 {
     int socket;
+    int event_socket;
     BOOL secure;
     CtxtHandle ssl_ctx;
     SecPkgContext_StreamSizes ssl_sizes;
@@ -110,6 +111,8 @@ typedef struct
 
 BOOL is_valid_netconn(netconn_t *) DECLSPEC_HIDDEN;
 void close_netconn(netconn_t *) DECLSPEC_HIDDEN;
+
+int create_event_socket(void);
 
 static inline void * __WINE_ALLOC_SIZE(1) heap_alloc(size_t len)
 {
@@ -364,8 +367,11 @@ typedef struct
     LPWSTR statusText;
     DWORD bytesToWrite;
     DWORD bytesWritten;
+
+    CRITICAL_SECTION headers_section;  /* section to protect the headers array */
     HTTPHEADERW *custHeaders;
     DWORD nCustHeaders;
+
     FILETIME last_modified;
     HANDLE hCacheFile;
     req_file_t *req_file;
@@ -495,5 +501,7 @@ typedef struct
     |_SECURITY_FLAG_CERT_INVALID_CA             \
     |_SECURITY_FLAG_CERT_INVALID_CN             \
     |_SECURITY_FLAG_CERT_INVALID_DATE)
+
+BOOL is_outlook(void);
 
 #endif /* _WINE_INTERNET_H_ */

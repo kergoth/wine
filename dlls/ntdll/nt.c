@@ -232,6 +232,18 @@ NTSTATUS WINAPI NtAdjustPrivilegesToken(
     return ret;
 }
 
+
+/* Crossover hack tracked by bug 9315 */
+static BOOLEAN is_msmapi32_present(void)
+{
+    HMODULE dummy;
+    static const WCHAR wszMsmapi32[] = {'m','s','m','a','p','i','3','2','.','d','l','l',0};
+    UNICODE_STRING string;
+    RtlInitUnicodeString(&string, wszMsmapi32);
+    return (STATUS_SUCCESS ==
+        LdrGetDllHandle(0, 0, &string, &dummy));
+}
+
 /******************************************************************************
 *  NtQueryInformationToken		[NTDLL.@]
 *  ZwQueryInformationToken		[NTDLL.@]
@@ -354,21 +366,51 @@ NTSTATUS WINAPI NtQueryInformationToken(
                 struct token_groups *tg = buffer;
                 unsigned int *attr = (unsigned int *)(tg + 1);
                 ULONG i;
-                const int non_sid_portion = (sizeof(struct token_groups) + tg->count * sizeof(unsigned int));
-                SID *sids = (SID *)((char *)tokeninfo + FIELD_OFFSET( TOKEN_GROUPS, Groups[tg->count] ));
+                int non_sid_portion;
+                SID *sids;
+                ULONG needed_bytes;
+                static const SID service_sid = { SID_REVISION, 1, { SECURITY_NT_AUTHORITY }, { SECURITY_SERVICE_RID } };
+                BOOLEAN is_msmapi32 = is_msmapi32_present();
 
-                if (retlen) *retlen = reply->user_len;
-
-                groups->GroupCount = tg->count;
-                memcpy( sids, (char *)buffer + non_sid_portion,
-                        reply->user_len - FIELD_OFFSET( TOKEN_GROUPS, Groups[tg->count] ));
-
-                for (i = 0; i < tg->count; i++)
+                /* Crossover hack tracked by bug 9315 */
+                if (is_msmapi32)
                 {
-                    groups->Groups[i].Attributes = attr[i];
-                    groups->Groups[i].Sid = sids;
-                    sids = (SID *)((char *)sids + RtlLengthSid(sids));
+                    non_sid_portion = (sizeof(struct token_groups) + (tg->count + 1) * sizeof(unsigned int));
+                    sids = (SID *)((char *)tokeninfo + FIELD_OFFSET( TOKEN_GROUPS, Groups[tg->count + 1] ));
+                    needed_bytes = reply->user_len +
+                        FIELD_OFFSET( TOKEN_GROUPS, Groups[tg->count + 1] ) - FIELD_OFFSET( TOKEN_GROUPS, Groups[tg->count] ) +
+                        sizeof(service_sid);
                 }
+                else
+                {
+                    non_sid_portion = (sizeof(struct token_groups) + tg->count * sizeof(unsigned int));
+                    sids = (SID *)((char *)tokeninfo + FIELD_OFFSET( TOKEN_GROUPS, Groups[tg->count] ));
+                    needed_bytes = reply->user_len;
+                }
+
+                if (retlen) *retlen = needed_bytes;
+
+                if (needed_bytes <= tokeninfolength)
+                {
+                    groups->GroupCount = tg->count;
+                    memcpy( sids, (char *)buffer + non_sid_portion,
+                            reply->user_len - FIELD_OFFSET( TOKEN_GROUPS, Groups[tg->count] ));
+
+                    for (i = 0; i < tg->count; i++)
+                    {
+                        groups->Groups[i].Attributes = attr[i];
+                        groups->Groups[i].Sid = sids;
+                        sids = (SID *)((char *)sids + RtlLengthSid(sids));
+                    }
+                    if (is_msmapi32)
+                    {
+                        groups->Groups[i].Attributes = 0;
+                        groups->Groups[i].Sid = sids;
+                        groups->GroupCount++;
+                        memcpy(sids, &service_sid, sizeof(service_sid));
+                    }
+                }
+                else status = STATUS_BUFFER_TOO_SMALL;
              }
              else if (retlen) *retlen = 0;
         }

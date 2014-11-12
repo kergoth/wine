@@ -39,6 +39,10 @@ distclean:: clean
 	$(RM) config.* configure.lineno TAGS tags include/config.h include/stamp-h Makefile Make.tmp .gitignore
 	$(RM) -r autom4te.cache
 
+install-image: install-lib
+# Get rid of the files we don't want in the image
+	$(RM) -r $(DESTDIR)$(mandir) $(DESTDIR)$(datadir)/applications
+
 # Rules for uninstalling
 
 .PHONY: install install-lib install-dev uninstall __uninstall__

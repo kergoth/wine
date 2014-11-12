@@ -182,6 +182,7 @@ static inline NSUInteger adjusted_modifiers_for_option_behavior(NSUInteger modif
 @property (nonatomic) pthread_mutex_t* surface_mutex;
 
 @property (copy, nonatomic) NSBezierPath* shape;
+@property (copy, nonatomic) NSData* shapeData;
 @property (nonatomic) BOOL shapeChangedSinceLastDraw;
 @property (readonly, nonatomic) BOOL needsTransparency;
 
@@ -236,6 +237,17 @@ static inline NSUInteger adjusted_modifiers_for_option_behavior(NSUInteger modif
         if ([window contentView] != self)
             return;
 
+        if (window.shapeChangedSinceLastDraw && window.shape && !window.colorKeyed && !window.usePerPixelAlpha)
+        {
+            [[NSColor clearColor] setFill];
+            NSRectFill(rect);
+
+            [window.shape addClip];
+
+            [[NSColor windowBackgroundColor] setFill];
+            NSRectFill(rect);
+        }
+
         if (window.surface && window.surface_mutex &&
             !pthread_mutex_lock(window.surface_mutex))
         {
@@ -289,7 +301,7 @@ static inline NSUInteger adjusted_modifiers_for_option_behavior(NSUInteger modif
         // If the window may be transparent, then we have to invalidate the
         // shadow every time we draw.  Also, if this is the first time we've
         // drawn since changing from transparent to opaque.
-        if (![window isOpaque] || window.shapeChangedSinceLastDraw)
+        if (window.colorKeyed || window.usePerPixelAlpha || window.shapeChangedSinceLastDraw)
         {
             window.shapeChangedSinceLastDraw = FALSE;
             [window invalidateShadow];
@@ -529,7 +541,7 @@ static inline NSUInteger adjusted_modifiers_for_option_behavior(NSUInteger modif
 
     @synthesize disabled, noActivate, floating, fullscreen, fakingClose, latentParentWindow, hwnd, queue;
     @synthesize surface, surface_mutex;
-    @synthesize shape, shapeChangedSinceLastDraw;
+    @synthesize shape, shapeData, shapeChangedSinceLastDraw;
     @synthesize colorKeyed, colorKeyRed, colorKeyGreen, colorKeyBlue;
     @synthesize usePerPixelAlpha;
     @synthesize imeData, commandDone;
@@ -623,6 +635,7 @@ static inline NSUInteger adjusted_modifiers_for_option_behavior(NSUInteger modif
         [latentChildWindows release];
         [latentParentWindow release];
         [shape release];
+        [shapeData release];
         [super dealloc];
     }
 
@@ -1373,11 +1386,15 @@ static inline NSUInteger adjusted_modifiers_for_option_behavior(NSUInteger modif
     {
         if (![self isOpaque] && !self.needsTransparency)
         {
+            self.shapeChangedSinceLastDraw = TRUE;
+            [[self contentView] setNeedsDisplay:YES];
             [self setBackgroundColor:[NSColor windowBackgroundColor]];
             [self setOpaque:YES];
         }
         else if ([self isOpaque] && self.needsTransparency)
         {
+            self.shapeChangedSinceLastDraw = TRUE;
+            [[self contentView] setNeedsDisplay:YES];
             [self setBackgroundColor:[NSColor clearColor]];
             [self setOpaque:NO];
         }
@@ -1386,7 +1403,6 @@ static inline NSUInteger adjusted_modifiers_for_option_behavior(NSUInteger modif
     - (void) setShape:(NSBezierPath*)newShape
     {
         if (shape == newShape) return;
-        if (shape && newShape && [shape isEqual:newShape]) return;
 
         if (shape)
         {
@@ -1547,6 +1563,8 @@ static inline NSUInteger adjusted_modifiers_for_option_behavior(NSUInteger modif
 
         if ([menuItem action] == @selector(makeKeyAndOrderFront:))
             ret = [self isKeyWindow] || (!self.disabled && !self.noActivate);
+        else if ([menuItem action] == @selector(undo:)) // CrossOver Hack 10912: Mac Edit menu
+            ret = TRUE;
         if ([menuItem action] == @selector(toggleFullScreen:) && self.disabled)
             ret = NO;
 
@@ -1575,6 +1593,69 @@ static inline NSUInteger adjusted_modifiers_for_option_behavior(NSUInteger modif
             [[self firstResponder] keyDown:event];
         else
             [super sendEvent:event];
+    }
+
+    // CrossOver Hack 10912: Mac Edit menu
+    - (void) sendEditMenuCommand:(int)command
+    {
+        macdrv_event* event;
+        NSTimeInterval now = [[NSProcessInfo processInfo] systemUptime];
+
+        if (mac_edit_menu == MAC_EDIT_MENU_DISABLED) // Shouldn't get here
+        {
+            ERR(@"The Mac Edit menu is supposed to be disabled\n");
+            NSBeep();
+            return;
+        }
+
+        event = macdrv_create_event(EDIT_MENU_COMMAND, self);
+        event->edit_menu_command.command = command;
+        event->edit_menu_command.time_ms = [[WineApplicationController sharedController] ticksForEventTime:now];
+
+        [queue postEvent:event];
+
+        macdrv_release_event(event);
+
+        // This is an even grosser hack than the rest of the support for the Edit
+        // menu.  We are deliberately leaving ourselves with an incorrect notion
+        // of the current modifier key state (for the case where the user used a
+        // Command-key shortcut to invoke an Edit menu item).  Both Wine and this
+        // class pretend that Command/Alt are not pressed so that, when the user
+        // actually releases the key, it doesn't put focus on the menu bar.  If
+        // the user keeps Command pressed and types another key, we'll think that
+        // Command was newly pressed and generate the appropriate event to get
+        // everybody back in sync.
+        lastModifierFlags &= ~(NX_COMMANDMASK | NX_DEVICELCMDKEYMASK | NX_DEVICERCMDKEYMASK);
+    }
+
+    - (void) copy:(id)sender
+    {
+        [self sendEditMenuCommand:EDIT_COMMAND_COPY];
+    }
+
+    - (void) cut:(id)sender
+    {
+        [self sendEditMenuCommand:EDIT_COMMAND_CUT];
+    }
+
+    - (void) delete:(id)sender
+    {
+        [self sendEditMenuCommand:EDIT_COMMAND_DELETE];
+    }
+
+    - (void) paste:(id)sender
+    {
+        [self sendEditMenuCommand:EDIT_COMMAND_PASTE];
+    }
+
+    - (void) selectAll:(id)sender
+    {
+        [self sendEditMenuCommand:EDIT_COMMAND_SELECT_ALL];
+    }
+
+    - (void) undo:(id)sender
+    {
+        [self sendEditMenuCommand:EDIT_COMMAND_UNDO];
     }
 
     - (void) miniaturize:(id)sender
@@ -1698,6 +1779,19 @@ static inline NSUInteger adjusted_modifiers_for_option_behavior(NSUInteger modif
     {
         if ([self isVisible])
             [self becameEligibleParentOrChild];
+    }
+
+
+    /*
+     * ---------- NSObject method overrides ----------
+     */
+    // CrossOver Hack 10912: Mac Edit menu
+    - (BOOL) respondsToSelector:(SEL)selector
+    {
+        if (mac_edit_menu == MAC_EDIT_MENU_DISABLED && [[WineApplicationController sharedController] isEditMenuAction:selector])
+             return FALSE;
+
+        return [super respondsToSelector:selector];
     }
 
 
@@ -2364,16 +2458,24 @@ void macdrv_set_window_shape(macdrv_window w, const CGRect *rects, int count)
 
     OnMainThread(^{
         if (!rects || !count)
+        {
             window.shape = nil;
+            window.shapeData = nil;
+        }
         else
         {
-            NSBezierPath* path;
-            unsigned int i;
+            size_t length = sizeof(*rects) * count;
+            if (window.shapeData.length != length || memcmp(window.shapeData.bytes, rects, length))
+            {
+                NSBezierPath* path;
+                unsigned int i;
 
-            path = [NSBezierPath bezierPath];
-            for (i = 0; i < count; i++)
-                [path appendBezierPathWithRect:NSRectFromCGRect(rects[i])];
-            window.shape = path;
+                path = [NSBezierPath bezierPath];
+                for (i = 0; i < count; i++)
+                    [path appendBezierPathWithRect:NSRectFromCGRect(rects[i])];
+                window.shape = path;
+                window.shapeData = [NSData dataWithBytes:rects length:length];
+            }
         }
     });
 

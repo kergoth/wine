@@ -585,6 +585,180 @@ my %wgl_functions =
     "wglSwapBuffers" => [ "BOOL", [ [ "HDC", "hdc" ] ] ],
    );
 
+my %glu_functions =
+   (
+    "gluBeginCurve" => [ "void", [ [ "void*", "nurb" ] ], "GLU" ],
+    "gluBeginPolygon" => [ "void", [ [ "void*", "tess" ] ], "GLU" ],
+    "gluBeginSurface" => [ "void", [ [ "void*", "nurb" ] ], "GLU" ],
+    "gluBeginTrim" => [ "void", [ [ "void*", "nurb" ] ], "GLU" ],
+    "gluBuild1DMipmaps" => [ "GLint", [ [ "GLenum", "target" ],
+                                        [ "GLint", "internalFormat" ],
+                                        [ "GLsizei", "width" ],
+                                        [ "GLenum", "format" ],
+                                        [ "GLenum", "type" ],
+                                        [ "const void *", "data" ] ], "GLU" ],
+    "gluBuild2DMipmaps" => [ "GLint", [ [ "GLenum", "target" ],
+                                        [ "GLint", "internalFormat" ],
+                                        [ "GLsizei", "width" ],
+                                        [ "GLsizei", "height" ],
+                                        [ "GLenum", "format" ],
+                                        [ "GLenum", "type" ],
+                                        [ "const void *", "data" ] ], "GLU" ],
+    "gluCylinder" => [ "void", [ [ "void*", "quad" ],
+                                 [ "GLdouble", "base" ],
+                                 [ "GLdouble", "top" ],
+                                 [ "GLdouble", "height" ],
+                                 [ "GLint", "slices" ],
+                                 [ "GLint", "stacks" ] ], "GLU" ],
+    "gluDeleteNurbsRenderer" => [ "void", [ [ "void*", "nurb" ] ], "GLU" ],
+    "gluDeleteQuadric" => [ "void", [ [ "void*", "quad" ] ], "GLU" ],
+    "gluDeleteTess" => [ "void", [ [ "void*", "tess" ] ], "GLU" ],
+    "gluDisk" => [ "void", [ [ "void*", "quad" ],
+                             [ "GLdouble", "inner" ],
+                             [ "GLdouble", "outer" ],
+                             [ "GLint", "slices" ],
+                             [ "GLint", "loops" ] ], "GLU" ],
+    "gluEndCurve" => [ "void", [ [ "void*", "nurb" ] ], "GLU" ],
+    "gluEndPolygon" => [ "void", [ [ "void*", "tess" ] ], "GLU" ],
+    "gluEndSurface" => [ "void", [ [ "void*", "nurb" ] ], "GLU" ],
+    "gluEndTrim" => [ "void", [ [ "void*", "nurb" ] ], "GLU" ],
+    "gluErrorString" => [ "const GLubyte *", [ [ "GLenum", "error" ] ], "GLU" ],
+    "gluGetNurbsProperty" => [ "void", [ [ "void*", "nurb" ],
+                                         [ "GLenum", "property" ],
+                                         [ "GLfloat*", "data" ] ], "GLU" ],
+    "gluGetString" => [ "const GLubyte *", [ [ "GLenum", "name" ] ], "GLU" ],
+    "gluGetTessProperty" => [ "void", [ [ "void*", "tess" ],
+                                        [ "GLenum", "which" ],
+                                        [ "GLdouble*", "data" ] ], "GLU" ],
+    "gluLoadSamplingMatrices" => [ "void", [ [ "void*", "nurb" ],
+                                             [ "const GLfloat *", "model" ],
+                                             [ "const GLfloat *", "perspective" ],
+                                             [ "const GLint *", "view" ] ], "GLU" ],
+    "gluLookAt" => [ "void", [ [ "GLdouble", "eyeX" ],
+                               [ "GLdouble", "eyeY" ],
+                               [ "GLdouble", "eyeZ" ],
+                               [ "GLdouble", "centerX" ],
+                               [ "GLdouble", "centerY" ],
+                               [ "GLdouble", "centerZ" ],
+                               [ "GLdouble", "upX" ],
+                               [ "GLdouble", "upY" ],
+                               [ "GLdouble", "upZ" ] ], "GLU" ],
+    "gluNewNurbsRenderer" => [ "void*", [ ], "GLU" ],
+    "gluNewQuadric" => [ "void*", [ ], "GLU" ],
+    "gluNewTess" => [ "void*", [ ], "GLU" ],
+    "gluNextContour" => [ "void", [ [ "void*", "tess" ],
+                                    [ "GLenum", "type" ] ], "GLU" ],
+    "gluNurbsCallback" => [ "void", [ [ "void*", "nurb" ],
+                                      [ "GLenum", "which" ],
+                                      [ "void *", "CallBackFunc" ] ], "GLU" ],
+    "gluNurbsCurve" => [ "void", [ [ "void*", "nurb" ],
+                                   [ "GLint", "knotCount" ],
+                                   [ "GLfloat *", "knots" ],
+                                   [ "GLint", "stride" ],
+                                   [ "GLfloat *", "control" ],
+                                   [ "GLint", "order" ],
+                                   [ "GLenum", "type" ] ], "GLU" ],
+    "gluNurbsProperty" => [ "void", [ [ "void*", "nurb" ],
+                                      [ "GLenum", "property" ],
+                                      [ "GLfloat", "value" ] ], "GLU" ],
+    "gluNurbsSurface" => [ "void", [ [ "void*", "nurb" ],
+                                     [ "GLint", "sKnotCount" ],
+                                     [ "GLfloat*", "sKnots" ],
+                                     [ "GLint", "tKnotCount" ],
+                                     [ "GLfloat*", "tKnots" ],
+                                     [ "GLint", "sStride" ],
+                                     [ "GLint", "tStride" ],
+                                     [ "GLfloat*", "control" ],
+                                     [ "GLint", "sOrder" ],
+                                     [ "GLint", "tOrder" ],
+                                     [ "GLenum", "type" ] ], "GLU" ],
+    "gluOrtho2D" => [ "void", [ [ "GLdouble", "left" ],
+                                [ "GLdouble", "right" ],
+                                [ "GLdouble", "bottom" ],
+                                [ "GLdouble", "top" ] ], "GLU" ],
+    "gluPartialDisk" => [ "void", [ [ "void*", "quad" ],
+                                    [ "GLdouble", "inner" ],
+                                    [ "GLdouble", "outer" ],
+                                    [ "GLint", "slices" ],
+                                    [ "GLint", "loops" ],
+                                    [ "GLdouble", "start" ],
+                                    [ "GLdouble", "sweep" ] ], "GLU" ],
+    "gluPerspective" => [ "void", [ [ "GLdouble", "fovy" ],
+                                    [ "GLdouble", "aspect" ],
+                                    [ "GLdouble", "zNear" ],
+                                    [ "GLdouble", "zFar" ] ], "GLU" ],
+    "gluPickMatrix" => [ "void", [ [ "GLdouble", "x" ],
+                                   [ "GLdouble", "y" ],
+                                   [ "GLdouble", "delX" ],
+                                   [ "GLdouble", "delY" ],
+                                   [ "GLint *", "viewport" ] ], "GLU" ],
+    "gluProject" => [ "GLint", [ [ "GLdouble", "objX" ],
+                                 [ "GLdouble", "objY" ],
+                                 [ "GLdouble", "objZ" ],
+                                 [ "const GLdouble *", "model" ],
+                                 [ "const GLdouble *", "proj" ],
+                                 [ "const GLint *", "view" ],
+                                 [ "GLdouble*", "winX" ],
+                                 [ "GLdouble*", "winY" ],
+                                 [ "GLdouble*", "winZ" ] ], "GLU" ],
+    "gluPwlCurve" => [ "void", [ [ "void*", "nurb" ],
+                                 [ "GLint", "count" ],
+                                 [ "GLfloat*", "data" ],
+                                 [ "GLint", "stride" ],
+                                 [ "GLenum", "type" ] ], "GLU" ],
+    "gluQuadricCallback" => [ "void", [ [ "void*", "quad" ],
+                                        [ "GLenum", "which" ],
+                                        [ "void *", "CallBackFunc" ] ], "GLU" ],
+    "gluQuadricDrawStyle" => [ "void", [ [ "void*", "quad" ],
+                                         [ "GLenum", "draw" ] ], "GLU" ],
+    "gluQuadricNormals" => [ "void", [ [ "void*", "quad" ],
+                                       [ "GLenum", "normal" ] ], "GLU" ],
+    "gluQuadricOrientation" => [ "void", [ [ "void*", "quad" ],
+                                           [ "GLenum", "orientation" ] ], "GLU" ],
+    "gluQuadricTexture" => [ "void", [ [ "void*", "quad" ],
+                                       [ "GLboolean", "texture" ] ], "GLU" ],
+    "gluScaleImage" => [ "GLint", [ [ "GLenum", "format" ],
+                                    [ "GLsizei", "wIn" ],
+                                    [ "GLsizei", "hIn" ],
+                                    [ "GLenum", "typeIn" ],
+                                    [ "const void *", "dataIn" ],
+                                    [ "GLsizei", "wOut" ],
+                                    [ "GLsizei", "hOut" ],
+                                    [ "GLenum", "typeOut" ],
+                                    [ "GLvoid*", "dataOut" ] ], "GLU" ],
+    "gluSphere" => [ "void", [ [ "void*", "quad" ],
+                               [ "GLdouble", "radius" ],
+                               [ "GLint", "slices" ],
+                               [ "GLint", "stacks" ] ], "GLU" ],
+    "gluTessBeginContour" => [ "void", [ [ "void*", "tess" ] ], "GLU" ],
+    "gluTessBeginPolygon" => [ "void", [ [ "void*", "tess" ],
+                                         [ "GLvoid*", "data" ] ], "GLU" ],
+    "gluTessCallback" => [ "void", [ [ "void*", "tess" ],
+                                     [ "GLenum", "which" ],
+                                     [ "void *", "CallBackFunc" ] ], "GLU" ],
+    "gluTessEndContour" => [ "void", [ [ "void*", "tess" ] ], "GLU" ],
+    "gluTessEndPolygon" => [ "void", [ [ "void*", "tess" ] ], "GLU" ],
+    "gluTessNormal" => [ "void", [ [ "void*", "tess" ],
+                                   [ "GLdouble", "valueX" ],
+                                   [ "GLdouble", "valueY" ],
+                                   [ "GLdouble", "valueZ" ] ], "GLU" ],
+    "gluTessProperty" => [ "void", [ [ "void*", "tess" ],
+                                     [ "GLenum", "which" ],
+                                     [ "GLdouble", "data" ] ], "GLU" ],
+    "gluTessVertex" => [ "void", [ [ "void*", "tess" ],
+                                   [ "GLdouble *", "location" ],
+                                   [ "GLvoid*", "data" ] ], "GLU" ],
+    "gluUnProject" => [ "GLint", [ [ "GLdouble", "winX" ],
+                                   [ "GLdouble", "winY" ],
+                                   [ "GLdouble", "winZ" ],
+                                   [ "const GLdouble *", "model" ],
+                                   [ "const GLdouble *", "proj" ],
+                                   [ "const GLint *", "view" ],
+                                   [ "GLdouble*", "objX" ],
+                                   [ "GLdouble*", "objY" ],
+                                   [ "GLdouble*", "objZ" ] ], "GLU" ],
+   );
+
 my %supported_wgl_extensions =
    (
     "WGL_ARB_create_context" => 1,
@@ -769,12 +943,26 @@ foreach (sort keys %ext_functions)
     printf HEADER "        %s;\n", get_func_proto("(WINE_GLAPI *p_%s)", $_, $ext_functions{$_});
 }
 print HEADER "    } ext;\n";
+
+print HEADER "    struct\n    {\n";
+foreach (sort keys %glu_functions)
+{
+    printf HEADER "        %s;\n", get_func_proto("(WINE_GLAPI *p_%s)", $_, $glu_functions{$_});
+}
+print HEADER "    } glu;\n";
 print HEADER "};\n\n";
 
 print HEADER "#define ALL_WGL_FUNCS";
 foreach (sort keys %norm_functions)
 {
     next if $_ eq "glDebugEntry";
+    printf HEADER " \\\n    USE_GL_FUNC(\%s)", $_;
+}
+print HEADER "\n\n";
+
+print HEADER "#define ALL_GLU_FUNCS";
+foreach (sort keys %glu_functions)
+{
     printf HEADER " \\\n    USE_GL_FUNC(\%s)", $_;
 }
 print HEADER "\n\n";
@@ -899,6 +1087,9 @@ foreach (sort keys %norm_functions) {
 foreach (sort keys %ext_functions) {
     print NORM generate_null_func($_, $ext_functions{$_});
 }
+foreach (sort keys %glu_functions) {
+    print NORM generate_null_func($_, $glu_functions{$_});
+}
 
 print NORM "\nstruct opengl_funcs null_opengl_funcs =\n{\n    {\n";
 foreach (sort keys %wgl_functions) { print NORM "        null_$_,\n"; }
@@ -906,6 +1097,8 @@ print NORM "    },\n    {\n";
 foreach (sort keys %norm_functions) { print NORM "        null_$_,\n" unless $_ eq "glDebugEntry"; }
 print NORM "    },\n    {\n";
 foreach (sort keys %ext_functions) { print NORM "        null_$_,\n"; }
+print NORM "    },\n    {\n";
+foreach (sort keys %glu_functions) { print NORM "        null_$_,\n"; }
 print NORM "    }\n};\n";
 
 close(NORM);

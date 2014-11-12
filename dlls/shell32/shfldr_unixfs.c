@@ -1307,6 +1307,7 @@ static HRESULT WINAPI ShellFolder2_GetDisplayNameOf(IShellFolder2* iface,
                 }
                 ILFree(pidl_parent);
             }
+            return hr;
         }
     } else {
         WCHAR wszFileName[MAX_PATH];
@@ -1322,7 +1323,16 @@ static HRESULT WINAPI ShellFolder2_GetDisplayNameOf(IShellFolder2* iface,
         }
     }
 
-    TRACE("--> %s\n", debugstr_w(lpName->u.pOleStr));
+    if (SUCCEEDED(hr) && (GetVersion() & 0x80000000))
+    {
+        /* Win9x shell32 returns an ANSI string */
+        WCHAR *strW = lpName->u.pOleStr;
+        WideCharToMultiByte(CP_ACP, 0, strW, -1, lpName->u.cStr, MAX_PATH, NULL, NULL);
+        lpName->uType = STRRET_CSTR;
+        SHFree( strW );
+    }
+
+    TRACE("--> %s\n", lpName->uType == STRRET_CSTR ? lpName->u.cStr : debugstr_w(lpName->u.pOleStr));
     
     return hr;
 }

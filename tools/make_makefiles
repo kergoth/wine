@@ -24,22 +24,16 @@ use strict;
 # Programs that we want to install in the bin directory too
 my %bin_install =
 (
-  "msiexec" => 1,
-  "notepad" => 1,
-  "regedit" => 1,
-  "regsvr32" => 1,
-  "wineboot" => 1,
-  "winecfg" => 1,
-  "wineconsole" => 1,
-  "winedbg" => 1,
-  "winefile" => 1,
-  "winemine" => 1,
-  "winepath" => 1,
 );
 
 # Programs that we don't want to install at all
 my %dont_install =
 (
+  "icinfo" => 1,
+  "clock" => 1,
+  "progman" => 1,
+  "view" => 1,
+  "winemine" => 1,
   "winetest" => 1,
 );
 

@@ -149,6 +149,10 @@
 #define IDM_RECYCLEBIN_RESTORE      301
 #define IDM_RECYCLEBIN_ERASE        302
 
+#define WINE_IDS_PICTURES         1000
+#define WINE_IDS_MUSIC            1001
+#define WINE_IDS_MOVIES           1002
+
 /* Note: this string is referenced from the registry*/
 #define IDS_RECYCLEBIN_FOLDER_NAME   8964
 

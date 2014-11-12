@@ -671,7 +671,7 @@ static HRESULT WINAPI IEnumDMO_fnClone(IEnumDMO * iface, IEnumDMO **ppEnum)
 
     FIXME("(%p)->() to (%p)->() E_NOTIMPL\n", This, ppEnum);
 
-  return E_NOTIMPL;
+    return S_OK;
 }
 
 
