@@ -1496,5 +1496,8 @@
 @ cdecl wine_unix_to_nt_file_name(ptr ptr)
 @ cdecl __wine_init_windows_dir(wstr wstr)
 
+# User shared data
+@ cdecl __wine_user_shared_data()
+
 # hack
 @ stdcall rpc_NtReadFile(long long ptr ptr ptr ptr long ptr ptr)
