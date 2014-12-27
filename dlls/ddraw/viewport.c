@@ -368,7 +368,7 @@ static HRESULT WINAPI d3d_viewport_SetViewport(IDirect3DViewport3 *iface, D3DVIE
  * then there is the homogeneous vertex that is generated. Also there's a lack
  * of FVFs, but still a custom stride. Last, the d3d1 - d3d3 viewport has some
  * settings (scale) that d3d7 and wined3d do not have. All in all wrapping to
- * ProcessVertices doesn't pay of in terms of wrapper code needed and code
+ * ProcessVertices doesn't pay off in terms of wrapper code needed and code
  * reused.
  *
  * Params:
@@ -388,13 +388,14 @@ static HRESULT WINAPI d3d_viewport_TransformVertices(IDirect3DViewport3 *iface,
         DWORD dwVertexCount, D3DTRANSFORMDATA *lpData, DWORD dwFlags, DWORD *lpOffScreen)
 {
     struct d3d_viewport *viewport = impl_from_IDirect3DViewport3(iface);
-    D3DVIEWPORT vp = viewport->viewports.vp1;
-    D3DMATRIX view_mat, world_mat, mat;
+    //D3DVIEWPORT vp = viewport->viewports.vp1;
+    D3DMATRIX view_mat, world_mat, clip_mat, mat;
     float *in;
     float *out;
-    float x, y, z, w;
+    float hx, hy, hz, hw, x, y, z, w;
     unsigned int i;
     D3DHVERTEX *outH;
+    float offX, offY, scaleX, scaleY;
 
     TRACE("iface %p, vertex_count %u, vertex_data %p, flags %#x, clip_plane %p.\n",
             iface, dwVertexCount, lpData, dwFlags, lpOffScreen);
@@ -416,6 +417,37 @@ static HRESULT WINAPI d3d_viewport_TransformVertices(IDirect3DViewport3 *iface,
 
 
     wined3d_mutex_lock();
+
+    if (viewport->use_vp2)
+    {
+        D3DVIEWPORT2 *vp2 = &viewport->viewports.vp2;
+        memset(&clip_mat, 0, sizeof(clip_mat));
+        clip_mat._11 = 2.f / vp2->dvClipWidth;
+        clip_mat._22 = 2.f / vp2->dvClipHeight;
+        clip_mat._33 = 1.f / (vp2->dvMaxZ - vp2->dvMinZ);
+        clip_mat._41 = -1.f - vp2->dvClipX * clip_mat._11;
+        clip_mat._42 =  1.f - vp2->dvClipY * clip_mat._22;
+        clip_mat._43 = -vp2->dvMinZ * clip_mat._33;
+        clip_mat._44 = 1.f;
+        scaleX = .5f * vp2->dwWidth;
+        scaleY = -.5f * vp2->dwHeight;
+        offX = vp2->dwX + scaleX;
+        offY = vp2->dwY - scaleY;
+    }
+    else
+    {
+        D3DVIEWPORT *vp1 = &viewport->viewports.vp1;
+        memset(&clip_mat, 0, sizeof(clip_mat));
+        clip_mat._11 = 2.f * vp1->dvScaleX / vp1->dwWidth;
+        clip_mat._22 = 2.f * vp1->dvScaleY / vp1->dwHeight;
+        clip_mat._33 = 1.f;
+        clip_mat._44 = 1.f;
+        scaleX = .5f * vp1->dwWidth;
+        scaleY = -.5f * vp1->dwHeight;
+        offX = vp1->dwX + scaleX;
+        offY = vp1->dwY - scaleY;
+    }
+
     wined3d_device_get_transform(viewport->active_device->wined3d_device,
             D3DTRANSFORMSTATE_VIEW, (struct wined3d_matrix *)&view_mat);
     wined3d_device_get_transform(viewport->active_device->wined3d_device,
@@ -428,30 +460,38 @@ static HRESULT WINAPI d3d_viewport_TransformVertices(IDirect3DViewport3 *iface,
     outH = lpData->lpHOut;
     for(i = 0; i < dwVertexCount; i++)
     {
-        x = (in[0] * mat._11) + (in[1] * mat._21) + (in[2] * mat._31) + mat._41;
-        y = (in[0] * mat._12) + (in[1] * mat._22) + (in[2] * mat._32) + mat._42;
-        z = (in[0] * mat._13) + (in[1] * mat._23) + (in[2] * mat._33) + mat._43;
-        w = (in[0] * mat._14) + (in[1] * mat._24) + (in[2] * mat._34) + mat._44;
+        hx = (in[0] * mat._11) + (in[1] * mat._21) + (in[2] * mat._31) + mat._41;
+        hy = (in[0] * mat._12) + (in[1] * mat._22) + (in[2] * mat._32) + mat._42;
+        hz = (in[0] * mat._13) + (in[1] * mat._23) + (in[2] * mat._33) + mat._43;
+        hw = (in[0] * mat._14) + (in[1] * mat._24) + (in[2] * mat._34) + mat._44;
+
+        hw = 1.f / hw;
+        hx *= hw; hy *= hw; hz *= hw;
+
+        x = hx * clip_mat._11 + hw * clip_mat._41;
+        y = hy * clip_mat._22 + hw * clip_mat._42;
+        z = hz * clip_mat._33 + hw * clip_mat._43;
+        w = hw * clip_mat._44;
 
         if(dwFlags & D3DTRANSFORM_CLIPPED)
         {
             /* If clipping is enabled, Windows assumes that outH is
              * a valid pointer
              */
-            outH[i].u1.hx = x; outH[i].u2.hy = y; outH[i].u3.hz = z;
+            outH[i].u1.hx = hx; outH[i].u2.hy = hy; outH[i].u3.hz = hz;
 
             outH[i].dwFlags = 0;
-            if(x * vp.dvScaleX > ((float) vp.dwWidth * 0.5))
+            if(x > w)
                 outH[i].dwFlags |= D3DCLIP_RIGHT;
-            if(x * vp.dvScaleX <= -((float) vp.dwWidth) * 0.5)
+            if(x < -w)
                 outH[i].dwFlags |= D3DCLIP_LEFT;
-            if(y * vp.dvScaleY > ((float) vp.dwHeight * 0.5))
+            if(y > w)
                 outH[i].dwFlags |= D3DCLIP_TOP;
-            if(y * vp.dvScaleY <= -((float) vp.dwHeight) * 0.5)
+            if(y < -w)
                 outH[i].dwFlags |= D3DCLIP_BOTTOM;
-            if(z < 0.0)
+            if(z < 0.0f)
                 outH[i].dwFlags |= D3DCLIP_FRONT;
-            if(z > 1.0)
+            if(z > 1.0f)
                 outH[i].dwFlags |= D3DCLIP_BACK;
 
             if(outH[i].dwFlags)
@@ -461,23 +501,24 @@ static HRESULT WINAPI d3d_viewport_TransformVertices(IDirect3DViewport3 *iface,
                  * The exact scheme hasn't been figured out yet, but windows
                  * definitely writes something there.
                  */
-                out[0] = x;
-                out[1] = y;
-                out[2] = z;
-                out[3] = w;
+                out[0] = hx;
+                out[1] = hy;
+                out[2] = hz;
+                out[3] = hw;
                 in = (float *) ((char *) in + lpData->dwInSize);
                 out = (float *) ((char *) out + lpData->dwOutSize);
                 continue;
             }
         }
 
-        w = 1 / w;
-        x *= w; y *= w; z *= w;
-
-        out[0] = vp.dwWidth / 2 + vp.dwX + x * vp.dvScaleX;
-        out[1] = vp.dwHeight / 2 + vp.dwY - y * vp.dvScaleY;
+        out[0] = offX + x * scaleX;
+        out[1] = offY + y * scaleY;
         out[2] = z;
         out[3] = w;
+        /*
+        FIXME("%d: (%.2f,%.2f,%.2f)=>(%.2f,%.2f,%.2f,%.2f)=>(%.2f,%.2f,%.2f,%.2f)=>(%.1f,%.1f,%.1f,%.1f).\n",
+              i, in[0], in[1], in[2], hx, hy, hz, hw, x, y, z, w, out[0], out[1], out[2], out[3]);
+        */
         in = (float *) ((char *) in + lpData->dwInSize);
         out = (float *) ((char *) out + lpData->dwOutSize);
     }
