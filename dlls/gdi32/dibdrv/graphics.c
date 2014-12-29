@@ -874,6 +874,8 @@ HFONT dibdrv_SelectFont( PHYSDEV dev, HFONT font, UINT *aa_flags )
     dibdrv_physdev *pdev = get_dibdrv_pdev(dev);
     HFONT ret;
 
+    *aa_flags = GGO_BITMAP;
+
     if (pdev->dib.bit_count <= 8) *aa_flags = GGO_BITMAP;  /* no anti-aliasing on <= 8bpp */
 
     dev = GET_NEXT_PHYSDEV( dev, pSelectFont );
