@@ -904,6 +904,21 @@ void LOCALE_InitRegistry(void)
 }
 
 
+/* CrossOver hack 10978 */
+static char* getlocale(int cat_num, const char* cat_name)
+{
+    char* locale = setlocale(cat_num, NULL);
+    if (!locale || !strcmp(locale, "C"))
+    {
+        char* env = getenv("LC_ALL");
+        if (!env) env = getenv(cat_name);
+        if (!env) env = getenv("LANG");
+        if (env) locale = env;
+    }
+    return locale;
+}
+
+
 /***********************************************************************
  *           setup_unix_locales
  */
@@ -914,7 +929,7 @@ static UINT setup_unix_locales(void)
     char *locale;
     UINT unix_cp = 0;
 
-    if ((locale = setlocale( LC_CTYPE, NULL )))
+    if ((locale = getlocale( LC_CTYPE, "LC_CTYPE" ))) /* CrossOver hack 10978 */
     {
         strcpynAtoW( ctype_buff, locale, sizeof(ctype_buff)/sizeof(WCHAR) );
         parse_locale_name( ctype_buff, &locale_name );
@@ -928,7 +943,7 @@ static UINT setup_unix_locales(void)
            locale_name.lcid, locale_name.matches, debugstr_a(locale) );
 
 #define GET_UNIX_LOCALE(cat) do \
-    if ((locale = setlocale( cat, NULL ))) \
+    if ((locale = getlocale( cat, #cat ))) /* CrossOver hack 10978 */ \
     { \
         strcpynAtoW( buffer, locale, sizeof(buffer)/sizeof(WCHAR) ); \
         if (!strcmpW( buffer, ctype_buff )) lcid_##cat = lcid_LC_CTYPE; \
@@ -2124,6 +2139,10 @@ INT WINAPI WideCharToMultiByte( UINT page, DWORD flags, LPCWSTR src, INT srclen,
                                     defchar, used ? &used_tmp : NULL );
             break;
         }
+#ifdef __APPLE__
+        /* CodeWeavers HACK */
+        flags |= WC_COMPOSITECHECK;
+#endif
         /* fall through */
     case CP_UTF8:
         if (defchar || used)
@@ -3256,6 +3275,7 @@ void LOCALE_Init(void)
 #ifdef __APPLE__
     /* MacOS doesn't set the locale environment variables so we have to do it ourselves */
     char user_locale[50];
+    char *env;
 
     CFLocaleRef user_locale_ref = CFLocaleCopyCurrent();
     CFStringRef user_locale_lang_ref = CFLocaleGetValue( user_locale_ref, kCFLocaleLanguageCode );
@@ -3278,6 +3298,16 @@ void LOCALE_Init(void)
     unix_cp = CP_UTF8;  /* default to utf-8 even if we don't get a valid locale */
     setenv( "LANG", user_locale, 0 );
     TRACE( "setting locale to '%s'\n", user_locale );
+
+    /* Check for broken LC_CTYPE; set only to UTF-8 */
+    env = getenv( "LC_CTYPE");
+    if (env && strcmp(env,"UTF-8")==0)
+    {
+        char *lang = getenv("LANG");
+        /* make sure we have a UTF-8 locale */
+        if (strstr(lang, ".UTF-8"))
+            unsetenv("LC_CTYPE");
+    }
 #endif /* __APPLE__ */
 
     setlocale( LC_ALL, "" );

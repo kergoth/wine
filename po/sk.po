@@ -408,8 +408,8 @@ msgctxt "hotkey"
 msgid "None"
 msgstr "Žiadne"
 
-#: comctl32.rc:31 cryptui.rc:230 regedit.rc:237 taskmgr.rc:434 winedbg.rc:60
-#: winedbg.rc:75 wordpad.rc:172
+#: comctl32.rc:31 cryptui.rc:230 regedit.rc:237 taskmgr.rc:434 winedbg.rc:58
+#: winedbg.rc:70 wordpad.rc:172
 msgid "Close"
 msgstr "Zavrieť"
 
@@ -6683,7 +6683,7 @@ msgstr ""
 msgid "Sound Selection"
 msgstr ""
 
-#: msacm32.rc:39 winedbg.rc:76
+#: msacm32.rc:39 winedbg.rc:71
 #, fuzzy
 msgid "&Save As..."
 msgstr "Uložiť ako"
@@ -13276,19 +13276,20 @@ msgid ""
 "sorry for the inconvenience."
 msgstr ""
 
-#: winedbg.rc:58
+#: winedbg.rc:56
 msgid ""
 "This can be caused by a problem in the program or a deficiency in Wine. You "
-"may want to check the <a href=\"http://appdb.winehq.org\">Application "
-"Database</a> for tips about running this application."
+"may want to check <a href=\"http://www.codeweavers.com/compatibility/"
+"\">http://www.codeweavers.com/compatibility/</a> for tips about running this "
+"application."
 msgstr ""
 
-#: winedbg.rc:61
+#: winedbg.rc:59
 #, fuzzy
 msgid "Show &Details"
 msgstr "&Detaily"
 
-#: winedbg.rc:66
+#: winedbg.rc:64
 #, fuzzy
 msgid "Program Error Details"
 msgstr ""
@@ -13297,12 +13298,12 @@ msgstr ""
 "#-#-#-#-#  sk.po (Wine)  #-#-#-#-#\n"
 "&Properties"
 
-#: winedbg.rc:73
+#: winedbg.rc:68
 msgid ""
 "If this problem is not present under Windows and has not been reported yet, "
 "you can save the detailed information to a file using the \"Save As\" "
-"button, then <a href=\"http://wiki.winehq.org/Bugs\">file a bug report</a> "
-"and attach that file to the report."
+"button, then <a href=\"http://www.codeweavers.com/support/tickets/enter/"
+"\">file a bug report</a> and attach that file to the report."
 msgstr ""
 
 #: winedbg.rc:38

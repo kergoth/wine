@@ -177,6 +177,8 @@
 WINE_DEFAULT_DEBUG_CHANNEL(winsock);
 WINE_DECLARE_DEBUG_CHANNEL(winediag);
 
+static BOOL rift_hack;
+
 /* names of the protocols */
 static const WCHAR NameIpxW[]   = {'I', 'P', 'X', '\0'};
 static const WCHAR NameSpxW[]   = {'S', 'P', 'X', '\0'};
@@ -953,9 +955,21 @@ static void free_per_thread_data(void)
  */
 BOOL WINAPI DllMain(HINSTANCE hInstDLL, DWORD fdwReason, LPVOID fImpLoad)
 {
+    char buffer[MAX_PATH+1];
+    DWORD len;
+
     TRACE("%p 0x%x %p\n", hInstDLL, fdwReason, fImpLoad);
     switch (fdwReason) {
     case DLL_PROCESS_ATTACH:
+        len = GetModuleFileNameA( 0, buffer, sizeof(buffer) );
+        if (len && len < MAX_PATH)
+        {
+            char *p, *appname = buffer;
+            if ((p = strrchr( appname, '/' ))) appname = p + 1;
+            if ((p = strrchr( appname, '\\' ))) appname = p + 1;
+            rift_hack = !strcasecmp(appname, "rift.exe");
+        }
+
         break;
     case DLL_PROCESS_DETACH:
         if (fImpLoad) break;
@@ -2006,7 +2020,10 @@ static NTSTATUS WS2_async_recv( void* user, IO_STATUS_BLOCK* iosb, NTSTATUS stat
     {
         iosb->u.Status = status;
         iosb->Information = result;
-        *apc = ws2_async_apc;
+        if (wsa->completion_func || !rift_hack)
+            *apc = ws2_async_apc;
+        else
+            HeapFree(GetProcessHeap(), 0, wsa);
     }
     return status;
 }
@@ -3955,6 +3972,7 @@ INT WINAPI WSAIoctl(SOCKET s, DWORD code, LPVOID in_buff, DWORD in_size, LPVOID 
 
             if (total > out_size)
             {
+                *ret_size = total;
                 HeapFree(GetProcessHeap(), 0, table);
                 status = WSAEFAULT;
                 break;

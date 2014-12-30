@@ -23,6 +23,7 @@
 
 #include <Security/AuthSession.h>
 #include <IOKit/pwr_mgt/IOPMLib.h>
+#include <unistd.h>
 
 #include "macdrv.h"
 #include "winuser.h"
@@ -50,6 +51,8 @@ int capture_displays_for_fullscreen = 0;
 BOOL skip_single_buffer_flushes = FALSE;
 BOOL allow_vsync = TRUE;
 BOOL allow_set_gamma = TRUE;
+/* CrossOver Hack 10912: Mac Edit menu */
+int mac_edit_menu = MAC_EDIT_MENU_BY_KEY;
 int left_option_is_alt = 0;
 int right_option_is_alt = 0;
 BOOL allow_software_rendering = FALSE;
@@ -58,6 +61,9 @@ int allow_immovable_windows = TRUE;
 int cursor_clipping_locks_windows = TRUE;
 int use_precise_scrolling = TRUE;
 HMODULE macdrv_module = 0;
+
+/* CrossOver Hack 11692: Unique device names from GetMonitorInfo */
+BOOL unique_monitor_names = FALSE;
 
 
 /**************************************************************************
@@ -162,6 +168,16 @@ static void setup_options(void)
     if (!get_config_key(hkey, appkey, "AllowSetGamma", buffer, sizeof(buffer)))
         allow_set_gamma = IS_OPTION_TRUE(buffer[0]);
 
+    /* CrossOver Hack 10912: Mac Edit menu */
+    if (!get_config_key(hkey, appkey, "EditMenu", buffer, sizeof(buffer)))
+    {
+        if (!strcmp(buffer, "message"))
+            mac_edit_menu = MAC_EDIT_MENU_BY_MESSAGE;
+        else if (!strcmp(buffer, "key"))
+            mac_edit_menu = MAC_EDIT_MENU_BY_KEY;
+        else
+            mac_edit_menu = MAC_EDIT_MENU_DISABLED;
+    }
     if (!get_config_key(hkey, appkey, "LeftOptionIsAlt", buffer, sizeof(buffer)))
         left_option_is_alt = IS_OPTION_TRUE(buffer[0]);
     if (!get_config_key(hkey, appkey, "RightOptionIsAlt", buffer, sizeof(buffer)))
@@ -183,6 +199,10 @@ static void setup_options(void)
     if (!get_config_key(hkey, appkey, "UsePreciseScrolling", buffer, sizeof(buffer)))
         use_precise_scrolling = IS_OPTION_TRUE(buffer[0]);
 
+    /* CrossOver Hack 11692: Unique device names from GetMonitorInfo */
+    if (!get_config_key(hkey, appkey, "UniqueMonitorNames", buffer, sizeof(buffer)))
+        unique_monitor_names = IS_OPTION_TRUE(buffer[0]);
+
     if (appkey) RegCloseKey(appkey);
     if (hkey) RegCloseKey(hkey);
 }
@@ -195,6 +215,18 @@ static BOOL process_attach(void)
 {
     SessionAttributeBits attributes;
     OSStatus status;
+
+    /* This is a hacky workaround for bug 11095.  Cocoa makes a similar
+       call to confstr() during its first pass through the event loop,
+       which happens on the main thread.  However, if Wine is double-
+       fork()-ing on a background thread simultaneously with the first such
+       call, the child process can become deadlocked.  It appears to be a bug
+       in the system library.
+
+       By calling this here, we greatly reduce the likelihood of such a race
+       and deadlock. */
+    char dummy[256];
+    confstr(_CS_DARWIN_USER_CACHE_DIR, dummy, sizeof(dummy));
 
     status = SessionGetInfo(callerSecuritySession, NULL, &attributes);
     if (status != noErr || !(attributes & sessionHasGraphicAccess))
@@ -212,6 +244,11 @@ static BOOL process_attach(void)
     }
 
     macdrv_clipboard_process_attach();
+
+    /* CrossOver Hack 10188: Actually, this disables that hack.  Don't pass
+                             system tray icons to our launcher since the Mac
+                             driver handles them itself. */
+    unsetenv("CX_SYSTRAY_SOCKET");
 
     return TRUE;
 }
