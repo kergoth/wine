@@ -1801,8 +1801,7 @@ static void state_depthbias(struct wined3d_context *context, const struct wined3
                 TRACE("No depth stencil, using depthbias scale of 0.0.\n");
                 scale = 0.0f;
             }
-
-            gl_info->gl_ops.gl.p_glPolygonOffset(scale_bias.f, const_bias.f * scale);
+            gl_info->gl_ops.gl.p_glPolygonOffset(scale_bias.f * scale, const_bias.f);
             checkGLcall("glPolygonOffset(...)");
         }
     }
