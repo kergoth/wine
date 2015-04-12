@@ -643,7 +643,7 @@ void x11_copy_to_screen(const struct wined3d_swapchain *swapchain, const RECT *r
     surface_load_location(front, WINED3D_LOCATION_DIB);
 
     src_dc = front->hDC;
-    window = swapchain->win_handle;
+    window = GetDesktopWindow(); // swapchain->win_handle;
     dst_dc = GetDCEx(window, 0, DCX_CLIPSIBLINGS | DCX_CACHE);
 
     /* Front buffer coordinates are screen coordinates. Map them to the

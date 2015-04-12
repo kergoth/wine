@@ -909,6 +909,7 @@ HDC WINAPI BeginPaint( HWND hwnd, PAINTSTRUCT *lps )
     if (!(hrgn = send_ncpaint( hwnd, NULL, &flags ))) return 0;
 
     erase = send_erase( hwnd, flags, hrgn, &rect, &hdc );
+    erase = 1;
 
     TRACE("hdc = %p box = (%s), fErase = %d\n", hdc, wine_dbgstr_rect(&rect), erase);
 
