@@ -45,18 +45,22 @@
 
 #ifndef __clang__
 __asm__(".zerofill WINE_DOS, WINE_DOS, ___wine_dos, 0x40000000");
+__asm__(".zerofill WINE_OLE32, WINE_OLE32, ___wine_ole32, 0x100000");
 __asm__(".zerofill WINE_SHAREDHEAP, WINE_SHAREDHEAP, ___wine_shared_heap, 0x03000000");
-extern char __wine_dos[0x40000000], __wine_shared_heap[0x03000000];
+extern char __wine_dos[0x40000000], __wine_ole32[0x100000], __wine_shared_heap[0x03000000];
 #else
 __asm__(".zerofill WINE_DOS, WINE_DOS");
+__asm__(".zerofill WINE_OLE32, WINE_OLE32");
 __asm__(".zerofill WINE_SHAREDHEAP, WINE_SHAREDHEAP");
 static char __wine_dos[0x40000000] __attribute__((section("WINE_DOS, WINE_DOS")));
+static char __wine_ole32[0x100000] __attribute__((section("WINE_OLE32, WINE_OLE32")));
 static char __wine_shared_heap[0x03000000] __attribute__((section("WINE_SHAREDHEAP, WINE_SHAREDHEAP")));
 #endif
 
 static const struct wine_preload_info wine_main_preload_info[] =
 {
     { __wine_dos,         sizeof(__wine_dos) },          /* DOS area + PE exe */
+    { __wine_ole32,       sizeof(__wine_ole32) },        /* For ole32 to always load at the same address */
     { __wine_shared_heap, sizeof(__wine_shared_heap) },  /* shared user data + shared heap */
     { 0, 0 }  /* end of list */
 };

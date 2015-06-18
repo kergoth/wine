@@ -3922,7 +3922,9 @@ static UINT ITERATE_CreateShortcuts(MSIRECORD *row, LPVOID param)
     else
     {
         FIXME("poorly handled shortcut format, advertised shortcut\n");
-        IShellLinkW_SetPath(sl,comp->FullKeypath);
+        path = resolve_keypath( package, comp );
+        IShellLinkW_SetPath( sl, path );
+        msi_free( path );
     }
 
     if (!MSI_RecordIsNull(row,6))
@@ -7645,6 +7647,16 @@ UINT ACTION_PerformAction(MSIPACKAGE *package, const WCHAR *action, UINT script)
     BOOL handled;
 
     TRACE("Performing action (%s)\n", debugstr_w(action));
+
+    /* CrossOver Hack #12413 for Quicken 2015 Premier. Don't install the PDF driver */
+    {
+        static const WCHAR pdf[] = {'I','n','s','t','a','l','l','P','D','F','D','r','i','v','e','r',0};
+        if (!strcmpiW(action, pdf))
+        {
+            FIXME("HACK: Skipping installation of pdf driver\n");
+            return rc;
+        }
+    }
 
     handled = ACTION_HandleStandardAction(package, action, &rc);
 

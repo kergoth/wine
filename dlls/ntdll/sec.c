@@ -1687,6 +1687,17 @@ NTSTATUS WINAPI NtSetSecurityObject(HANDLE Handle,
         if (status != STATUS_SUCCESS) return status;
         sd.dacl_len = (dacl && present) ? acl_bytesInUse(dacl) : 0;
         sd.control |= SE_DACL_PRESENT;
+        if ((SecurityInformation & 0x20000000) && dacl && present && dacl->AceCount == 0)
+        {
+            /* CrossOver hack for bug 12269.
+             * We're supposed to clear all permissions for this object and inherit
+             * everything from the parent, but that's not possible right now.
+             * If we let this through it'll just clear all permissions and no
+             * one can access the object, so ignore the DACL. */
+            SecurityInformation &= ~DACL_SECURITY_INFORMATION;
+            sd.dacl_len = 0;
+            sd.control &= ~SE_DACL_PRESENT;
+        }
     }
 
     SERVER_START_REQ( set_security_object )

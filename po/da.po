@@ -398,8 +398,8 @@ msgctxt "hotkey"
 msgid "None"
 msgstr "Ingen"
 
-#: comctl32.rc:31 cryptui.rc:230 regedit.rc:237 taskmgr.rc:434 winedbg.rc:60
-#: winedbg.rc:75 wordpad.rc:172
+#: comctl32.rc:31 cryptui.rc:230 regedit.rc:237 taskmgr.rc:434 winedbg.rc:58
+#: winedbg.rc:70 wordpad.rc:172
 msgid "Close"
 msgstr "Luk"
 
@@ -6712,7 +6712,7 @@ msgstr "Hele netværket"
 msgid "Sound Selection"
 msgstr "Lyd valg"
 
-#: msacm32.rc:39 winedbg.rc:76
+#: msacm32.rc:39 winedbg.rc:71
 msgid "&Save As..."
 msgstr "Gem &som..."
 
@@ -13780,30 +13780,32 @@ msgstr ""
 "Programmet %s er stødt på et alvorligt problem, og er nødt til at lukke. Vi "
 "beklager ulejligheden."
 
-#: winedbg.rc:58
+#: winedbg.rc:56
 msgid ""
 "This can be caused by a problem in the program or a deficiency in Wine. You "
-"may want to check the <a href=\"http://appdb.winehq.org\">Application "
-"Database</a> for tips about running this application."
+"may want to check <a href=\"http://www.codeweavers.com/compatibility/"
+"\">http://www.codeweavers.com/compatibility/</a> for tips about running this "
+"application."
 msgstr ""
 "Dette kan være forårsaget af et problem i programmet, eller en mangel i "
-"Wine. Du kan evt. tjekke <a href=\"http://appdb.winehq.org\">Program "
-"Database</a> for tips til at køre dette program."
+"Wine. Du kan evt. tjekke <a href=\"http://www.codeweavers.com/compatibility/"
+"\">http://www.codeweavers.com/compatibility/</a> for tips til at køre dette "
+"program."
 
-#: winedbg.rc:61
+#: winedbg.rc:59
 msgid "Show &Details"
 msgstr "Vis &detaljer"
 
-#: winedbg.rc:66
+#: winedbg.rc:64
 msgid "Program Error Details"
 msgstr "Programfejl detaljer"
 
-#: winedbg.rc:73
+#: winedbg.rc:68
 msgid ""
 "If this problem is not present under Windows and has not been reported yet, "
 "you can save the detailed information to a file using the \"Save As\" "
-"button, then <a href=\"http://wiki.winehq.org/Bugs\">file a bug report</a> "
-"and attach that file to the report."
+"button, then <a href=\"http://www.codeweavers.com/support/tickets/enter/"
+"\">file a bug report</a> and attach that file to the report."
 msgstr ""
 "Hvis dette problem ikke er til stede under Windows, og det endnu ikke er "
 "blevet rapporteret, så kan du gemme den detaljerede information til en fil "

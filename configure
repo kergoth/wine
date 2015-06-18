@@ -846,6 +846,7 @@ with_wine_tools
 with_wine64
 enable_largefile
 with_x
+enable_32autole
 enable_acledit
 enable_aclui
 enable_activeds
@@ -1050,6 +1051,8 @@ enable_httpapi
 enable_iccvid
 enable_icmp
 enable_ieframe
+enable_ieinfo5_ocx
+enable_iernonce
 enable_imaadp32_acm
 enable_imagehlp
 enable_imm32
@@ -1260,6 +1263,7 @@ enable_winecoreaudio_drv
 enable_wined3d
 enable_winegstreamer
 enable_winejoystick_drv
+enable_winejoystick_osx_drv
 enable_winemac_drv
 enable_winemapi
 enable_winemp3_acm
@@ -7549,7 +7553,7 @@ LOADER_RULES="
 all: wine.inf
 
 install install-lib:: wine-installed
-	\$(INSTALL_PROGRAM) wine-installed \$(DESTDIR)\$(bindir)/$wine_binary
+	\$(INSTALL_PROGRAM) wine-installed \$(DESTDIR)\$(bindir)/wineloader
 
 uninstall::
 	\$(RM) \$(DESTDIR)\$(bindir)/$wine_binary
@@ -7715,9 +7719,31 @@ uninstall::
     APPKIT_LIBS="-framework AppKit"
 
     LDEXECFLAGS="-image_base 0x7bf00000 -Wl,-segaddr,WINE_DOS,0x00001000,-segaddr,WINE_SHAREDHEAP,0x7f000000,-sectcreate,__TEXT,__info_plist,wine_info.plist"
-    case $host_os in
-      darwin11*) LDEXECFLAGS="-Wl,-macosx_version_min,10.6 $LDEXECFLAGS" ;;
-    esac
+    { $as_echo "$as_me:${as_lineno-$LINENO}: checking whether the compiler supports -Wl,-no_pie" >&5
+$as_echo_n "checking whether the compiler supports -Wl,-no_pie... " >&6; }
+if ${ac_cv_cflags__Wl__no_pie+:} false; then :
+  $as_echo_n "(cached) " >&6
+else
+  ac_wine_try_cflags_saved=$CFLAGS
+CFLAGS="$CFLAGS -Wl,-no_pie"
+cat confdefs.h - <<_ACEOF >conftest.$ac_ext
+/* end confdefs.h.  */
+int main(int argc, char **argv) { return 0; }
+_ACEOF
+if ac_fn_c_try_link "$LINENO"; then :
+  ac_cv_cflags__Wl__no_pie=yes
+else
+  ac_cv_cflags__Wl__no_pie=no
+fi
+rm -f core conftest.err conftest.$ac_objext \
+    conftest$ac_exeext conftest.$ac_ext
+CFLAGS=$ac_wine_try_cflags_saved
+fi
+{ $as_echo "$as_me:${as_lineno-$LINENO}: result: $ac_cv_cflags__Wl__no_pie" >&5
+$as_echo "$ac_cv_cflags__Wl__no_pie" >&6; }
+if test "x$ac_cv_cflags__Wl__no_pie" = xyes; then :
+  LDEXECFLAGS="-Wl,-no_pie $LDEXECFLAGS"
+fi
     if test "$ac_cv_header_DiskArbitration_DiskArbitration_h" = "yes"
     then
                 DISKARBITRATION_LIBS="-framework DiskArbitration -framework CoreFoundation"
@@ -7905,9 +7931,7 @@ wine-installed: main.o wine_info.plist
 
   linux-android*)
     DLLFLAGS="$DLLFLAGS -fPIC"
-    DLLPREFIX="lib"
     LDEXECFLAGS=""
-    dlldir="\${libdir}"
     { $as_echo "$as_me:${as_lineno-$LINENO}: checking whether the compiler supports -fPIC -Wl,--export-dynamic" >&5
 $as_echo_n "checking whether the compiler supports -fPIC -Wl,--export-dynamic... " >&6; }
 if ${ac_cv_cflags__fPIC__Wl___export_dynamic+:} false; then :
@@ -8290,6 +8314,47 @@ $as_echo "$ac_cv_cflags__Wl___enable_new_dtags" >&6; }
 if test "x$ac_cv_cflags__Wl___enable_new_dtags" = xyes; then :
   LDRPATH_INSTALL="$LDRPATH_INSTALL -Wl,--enable-new-dtags"
 fi
+
+      { $as_echo "$as_me:${as_lineno-$LINENO}: checking whether gcc accepts -static-libgcc" >&5
+$as_echo_n "checking whether gcc accepts -static-libgcc... " >&6; }
+if ${ac_cv_c_dll_static_libgcc+:} false; then :
+  $as_echo_n "(cached) " >&6
+else
+  { $as_echo "$as_me:${as_lineno-$LINENO}: checking whether the compiler supports -shared -static-libgcc" >&5
+$as_echo_n "checking whether the compiler supports -shared -static-libgcc... " >&6; }
+if ${ac_cv_cflags__shared__static_libgcc+:} false; then :
+  $as_echo_n "(cached) " >&6
+else
+  ac_wine_try_cflags_saved=$CFLAGS
+CFLAGS="$CFLAGS -shared -static-libgcc"
+cat confdefs.h - <<_ACEOF >conftest.$ac_ext
+/* end confdefs.h.  */
+int main(int argc, char **argv) { return 0; }
+_ACEOF
+if ac_fn_c_try_link "$LINENO"; then :
+  ac_cv_cflags__shared__static_libgcc=yes
+else
+  ac_cv_cflags__shared__static_libgcc=no
+fi
+rm -f core conftest.err conftest.$ac_objext \
+    conftest$ac_exeext conftest.$ac_ext
+CFLAGS=$ac_wine_try_cflags_saved
+fi
+{ $as_echo "$as_me:${as_lineno-$LINENO}: result: $ac_cv_cflags__shared__static_libgcc" >&5
+$as_echo "$ac_cv_cflags__shared__static_libgcc" >&6; }
+if test "x$ac_cv_cflags__shared__static_libgcc" = xyes; then :
+  ac_cv_c_dll_static_libgcc="yes"
+else
+  ac_cv_c_dll_static_libgcc="no"
+fi
+fi
+{ $as_echo "$as_me:${as_lineno-$LINENO}: result: $ac_cv_c_dll_static_libgcc" >&5
+$as_echo "$ac_cv_c_dll_static_libgcc" >&6; }
+      if test "$ac_cv_c_dll_static_libgcc" = "yes"
+      then
+        LDSHARED="$LDSHARED -static-libgcc"
+        LDDLLFLAGS="$LDDLLFLAGS -static-libgcc"
+      fi
 
       case $host_cpu in
         *i[3456789]86* | x86_64)
@@ -10322,14 +10387,14 @@ _ACEOF
 fi
         if test "x$with_glu" != "xno"
         then
-            { $as_echo "$as_me:${as_lineno-$LINENO}: checking for gluLookAt in -lGLU" >&5
-$as_echo_n "checking for gluLookAt in -lGLU... " >&6; }
-if ${ac_cv_lib_GLU_gluLookAt+:} false; then :
+            { $as_echo "$as_me:${as_lineno-$LINENO}: checking for -lGLU" >&5
+$as_echo_n "checking for -lGLU... " >&6; }
+if ${ac_cv_lib_soname_GLU+:} false; then :
   $as_echo_n "(cached) " >&6
 else
-  ac_check_lib_save_LIBS=$LIBS
+  ac_check_soname_save_LIBS=$LIBS
 LIBS="-lGLU $OPENGL_LIBS $X_LIBS -lm $X_EXTRA_LIBS $LIBS"
-cat confdefs.h - <<_ACEOF >conftest.$ac_ext
+  cat confdefs.h - <<_ACEOF >conftest.$ac_ext
 /* end confdefs.h.  */
 
 /* Override any GCC internal prototype to avoid an error.
@@ -10348,21 +10413,34 @@ return gluLookAt ();
 }
 _ACEOF
 if ac_fn_c_try_link "$LINENO"; then :
-  ac_cv_lib_GLU_gluLookAt=yes
-else
-  ac_cv_lib_GLU_gluLookAt=no
+  case "$LIBEXT" in
+    dll) ac_cv_lib_soname_GLU=`$ac_cv_path_LDD conftest.exe | grep "GLU" | sed -e "s/dll.*/dll/"';2,$d'` ;;
+    dylib) ac_cv_lib_soname_GLU=`otool -L conftest$ac_exeext | grep "libGLU\\.[0-9A-Za-z.]*dylib" | sed -e "s/^.*\/\(libGLU\.[0-9A-Za-z.]*dylib\).*$/\1/"';2,$d'` ;;
+    *) ac_cv_lib_soname_GLU=`$READELF -d conftest$ac_exeext | grep "NEEDED.*libGLU\\.$LIBEXT" | sed -e "s/^.*\\[\\(libGLU\\.$LIBEXT[^	 ]*\\)\\].*$/\1/"';2,$d'`
+       if ${ac_cv_lib_soname_GLU:+false} :; then :
+  ac_cv_lib_soname_GLU=`$LDD conftest$ac_exeext | grep "libGLU\\.$LIBEXT" | sed -e "s/^.*\(libGLU\.$LIBEXT[^	 ]*\).*$/\1/"';2,$d'`
+fi ;;
+  esac
 fi
 rm -f core conftest.err conftest.$ac_objext \
     conftest$ac_exeext conftest.$ac_ext
-LIBS=$ac_check_lib_save_LIBS
+  LIBS=$ac_check_soname_save_LIBS
 fi
-{ $as_echo "$as_me:${as_lineno-$LINENO}: result: $ac_cv_lib_GLU_gluLookAt" >&5
-$as_echo "$ac_cv_lib_GLU_gluLookAt" >&6; }
-if test "x$ac_cv_lib_GLU_gluLookAt" = xyes; then :
-  :
-fi
+if ${ac_cv_lib_soname_GLU:+false} :; then :
+  { $as_echo "$as_me:${as_lineno-$LINENO}: result: not found" >&5
+$as_echo "not found" >&6; }
 
-            if test "x$ac_cv_lib_GLU_gluLookAt" != xyes; then :
+else
+  { $as_echo "$as_me:${as_lineno-$LINENO}: result: $ac_cv_lib_soname_GLU" >&5
+$as_echo "$ac_cv_lib_soname_GLU" >&6; }
+
+cat >>confdefs.h <<_ACEOF
+#define SONAME_LIBGLU "$ac_cv_lib_soname_GLU"
+_ACEOF
+
+
+fi
+            if test "x$ac_cv_lib_soname_GLU" = "x"; then :
   case "x$with_glu" in
   x)   as_fn_append wine_notices "|libGLU ${notice_platform}development files not found, GLU won't be supported." ;;
   xno) ;;
@@ -10464,7 +10542,7 @@ Use the --without-x option if you really want this." "$LINENO" 5 ;;
 esac
 fi
 
-test "x$ac_cv_lib_GLU_gluLookAt" != xyes && enable_glu32=${enable_glu32:-no}
+test "x$ac_cv_lib_soname_GLU" = "x" && enable_glu32=${enable_glu32:-no}
 
 if test "$ac_cv_header_CL_cl_h" = "yes"
 then
@@ -13500,6 +13578,7 @@ test -n "$ALSA_LIBS" || enable_winealsa_drv=${enable_winealsa_drv:-no}
 test -n "$COREAUDIO_LIBS" || enable_winecoreaudio_drv=${enable_winecoreaudio_drv:-no}
 test "x$ac_cv_member_oss_sysinfo_numaudioengines" = xyes || enable_wineoss_drv=${enable_wineoss_drv:-no}
 test "$ac_cv_header_linux_joystick_h" = "yes" || enable_winejoystick_drv=${enable_winejoystick_drv:-no}
+test "$ac_cv_header_IOKit_hid_IOHIDLib_h" = "yes" || enable_winejoystick_osx_drv=${enable_winejoystick_osx_drv:-no}
 
 if test "x$ALSA_LIBS$COREAUDIO_LIBS" = "x" -a \
         "x$ac_cv_member_oss_sysinfo_numaudioengines" != xyes -a \
@@ -16724,6 +16803,7 @@ ac_config_links="$ac_config_links wine64:tools/winewrapper"
 wine_fn_config_symlink wine64
 fi
 
+wine_fn_config_dll 32autole enable_32autole
 wine_fn_config_dll acledit enable_acledit
 wine_fn_config_dll aclui enable_aclui implib
 wine_fn_config_dll activeds enable_activeds implib
@@ -16999,6 +17079,8 @@ wine_fn_config_dll iccvid enable_iccvid po
 wine_fn_config_dll icmp enable_icmp
 wine_fn_config_dll ieframe enable_ieframe clean,implib,po
 wine_fn_config_test dlls/ieframe/tests ieframe_test
+wine_fn_config_dll ieinfo5.ocx enable_ieinfo5_ocx
+wine_fn_config_dll iernonce enable_iernonce
 wine_fn_config_dll ifsmgr.vxd enable_win16
 wine_fn_config_dll imaadp32.acm enable_imaadp32_acm
 wine_fn_config_dll imagehlp enable_imagehlp implib
@@ -17341,6 +17423,7 @@ wine_fn_config_lib winecrt0
 wine_fn_config_dll wined3d enable_wined3d implib
 wine_fn_config_dll winegstreamer enable_winegstreamer
 wine_fn_config_dll winejoystick.drv enable_winejoystick_drv
+wine_fn_config_dll winejoystick_osx.drv enable_winejoystick_osx_drv
 wine_fn_config_dll winemac.drv enable_winemac_drv
 wine_fn_config_dll winemapi enable_winemapi
 wine_fn_config_dll winemp3.acm enable_winemp3_acm
@@ -17416,7 +17499,7 @@ wine_fn_config_program aspnet_regiis enable_aspnet_regiis install
 wine_fn_config_program attrib enable_attrib install,po
 wine_fn_config_program cabarc enable_cabarc install
 wine_fn_config_program cacls enable_cacls install
-wine_fn_config_program clock enable_clock install,po
+wine_fn_config_program clock enable_clock po
 wine_fn_config_program cmd enable_cmd install,po
 wine_fn_config_test programs/cmd/tests cmd.exe_test
 wine_fn_config_program conhost enable_conhost install
@@ -17431,29 +17514,29 @@ wine_fn_config_program extrac32 enable_extrac32 install
 wine_fn_config_program findstr enable_findstr install
 wine_fn_config_program hh enable_hh install
 wine_fn_config_program hostname enable_hostname install,po
-wine_fn_config_program icinfo enable_icinfo install
+wine_fn_config_program icinfo enable_icinfo
 wine_fn_config_program iexplore enable_iexplore install
 wine_fn_config_program ipconfig enable_ipconfig install,po
 wine_fn_config_program lodctr enable_lodctr install
 wine_fn_config_program mofcomp enable_mofcomp install
 wine_fn_config_program mshta enable_mshta install
-wine_fn_config_program msiexec enable_msiexec install,installbin,manpage
+wine_fn_config_program msiexec enable_msiexec install,manpage
 wine_fn_config_program net enable_net install,po
 wine_fn_config_program netsh enable_netsh install
 wine_fn_config_program netstat enable_netstat install,po
 wine_fn_config_program ngen enable_ngen install
-wine_fn_config_program notepad enable_notepad install,installbin,manpage,po
+wine_fn_config_program notepad enable_notepad install,manpage,po
 wine_fn_config_program oleview enable_oleview install,po
 wine_fn_config_program ping enable_ping install
 wine_fn_config_program plugplay enable_plugplay install
 wine_fn_config_program presentationfontcache enable_presentationfontcache install
-wine_fn_config_program progman enable_progman install,po
+wine_fn_config_program progman enable_progman po
 wine_fn_config_program reg enable_reg install,po
 wine_fn_config_program regasm enable_regasm install
-wine_fn_config_program regedit enable_regedit install,installbin,manpage,po
+wine_fn_config_program regedit enable_regedit install,manpage,po
 wine_fn_config_test programs/regedit/tests regedit.exe_test
 wine_fn_config_program regsvcs enable_regsvcs install
-wine_fn_config_program regsvr32 enable_regsvr32 install,installbin,manpage,po
+wine_fn_config_program regsvr32 enable_regsvr32 install,manpage,po
 wine_fn_config_program rpcss enable_rpcss clean,install
 wine_fn_config_program rundll.exe16 enable_win16 install
 wine_fn_config_program rundll32 enable_rundll32 install
@@ -17473,19 +17556,19 @@ wine_fn_config_program taskmgr enable_taskmgr install,po
 wine_fn_config_program termsv enable_termsv install
 wine_fn_config_program uninstaller enable_uninstaller install,po
 wine_fn_config_program unlodctr enable_unlodctr install
-wine_fn_config_program view enable_view install,po
+wine_fn_config_program view enable_view po
 wine_fn_config_program wevtutil enable_wevtutil install
-wine_fn_config_program wineboot enable_wineboot install,installbin,manpage,po
+wine_fn_config_program wineboot enable_wineboot install,manpage,po
 wine_fn_config_program winebrowser enable_winebrowser install
-wine_fn_config_program winecfg enable_winecfg install,installbin,manpage,po
-wine_fn_config_program wineconsole enable_wineconsole install,installbin,manpage,po
-wine_fn_config_program winedbg enable_winedbg install,installbin,manpage,po
+wine_fn_config_program winecfg enable_winecfg install,manpage,po
+wine_fn_config_program wineconsole enable_wineconsole install,manpage,po
+wine_fn_config_program winedbg enable_winedbg install,manpage,po
 wine_fn_config_program winedevice enable_winedevice install
-wine_fn_config_program winefile enable_winefile install,installbin,manpage,po
+wine_fn_config_program winefile enable_winefile install,manpage,po
 wine_fn_config_program winemenubuilder enable_winemenubuilder install
-wine_fn_config_program winemine enable_winemine install,installbin,manpage,po
+wine_fn_config_program winemine enable_winemine manpage,po
 wine_fn_config_program winemsibuilder enable_winemsibuilder install
-wine_fn_config_program winepath enable_winepath install,installbin,manpage
+wine_fn_config_program winepath enable_winepath install,manpage
 wine_fn_config_program winetest enable_winetest clean
 wine_fn_config_program winevdm enable_win16 install
 wine_fn_config_program winhelp.exe16 enable_win16 install

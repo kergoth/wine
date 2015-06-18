@@ -2029,6 +2029,14 @@ static void AddFaceToList(FT_Face ft_face, const char *file, void *font_data_ptr
 
     face = create_face( ft_face, face_index, file, font_data_ptr, font_data_size, flags );
     family = get_family( ft_face, flags & ADDFONT_VERTICAL_FONT );
+    if (strlenW(family->FamilyName) >= LF_FACESIZE)
+    {
+        WARN("Ignoring %s because name is too long\n", debugstr_w(family->FamilyName));
+        release_face( face );
+        release_family( family );
+        return;
+    }
+
     if (insert_face_in_family_list( face, family ))
     {
         if (flags & ADDFONT_ADD_TO_CACHE)
@@ -2157,6 +2165,15 @@ static INT AddFontToList(const char *file, void *font_data_ptr, DWORD font_data_
         if(ft_face->family_name[0] == '.') /* Ignore fonts with names beginning with a dot */
         {
             TRACE("Ignoring %s since its family name begins with a dot\n", debugstr_a(file));
+            pFT_Done_Face(ft_face);
+            return 0;
+        }
+
+        /* CROSSOVER HACK - bug 4862 */
+        if(!strcmp(ft_face->family_name, "AR PL ZenKai Uni") || !strcmp(ft_face->family_name, "Samyak Oriya"))
+        {
+            /* These fonts (ukai.ttf, samyak-oriya.ttf) cause native gdiplus to crash */
+            TRACE("Skipping %s\n", ft_face->family_name);
             pFT_Done_Face(ft_face);
             return 0;
         }
@@ -2696,8 +2713,12 @@ static void load_fontconfig_fonts(void)
     int i, len;
     char *file;
     const char *ext;
+    static const WCHAR cx_hack_var[] = {'C','X','_','S','K','I','P','_','F','O','N','T','C','O','N','F','I','G','_',
+                                        'F','O','N','T','S',0};
+    WCHAR env_buf[20];
 
     if (!fontconfig_enabled) return;
+    if(GetEnvironmentVariableW(cx_hack_var, env_buf, sizeof(env_buf)/sizeof(WCHAR))) return;
 
     pat = pFcPatternCreate();
     os = pFcObjectSetCreate();
@@ -3858,7 +3879,16 @@ static void update_font_info(void)
 
 static BOOL init_freetype(void)
 {
-    ft_handle = wine_dlopen(SONAME_LIBFREETYPE, RTLD_NOW, NULL, 0);
+    const char *ftname = "libcxfreetype.so";
+
+    TRACE("Trying freetype library %s (hard-coded)\n",ftname);
+    ft_handle = wine_dlopen(ftname, RTLD_NOW, NULL, 0);
+
+    if(!ft_handle) {
+        TRACE("Can't find freetype library %s, trying %s instead\n", ftname, SONAME_LIBFREETYPE);
+        ft_handle = wine_dlopen(SONAME_LIBFREETYPE, RTLD_NOW, NULL, 0);
+    }
+
     if(!ft_handle) {
         WINE_MESSAGE(
       "Wine cannot find the FreeType font library.  To enable Wine to\n"
@@ -4113,6 +4143,9 @@ static void reorder_font_list(void)
  */
 BOOL WineEngInit(void)
 {
+    static const WCHAR cx_hack_var[] = {'C','X','_','T','U','R','N','_','O','F','F','_','F','O','N','T','_',
+                                        'R','E','P','L','A','C','E','M','E','N','T','S',0};
+    WCHAR env_buf[20];
     DWORD disposition;
     HANDLE font_mutex;
 
@@ -4144,7 +4177,9 @@ BOOL WineEngInit(void)
     DumpFontList();
     LoadSubstList();
     DumpSubstList();
-    LoadReplaceList();
+
+    if(!GetEnvironmentVariableW(cx_hack_var, env_buf, sizeof(env_buf)/sizeof(WCHAR)))
+        LoadReplaceList();
 
     if(disposition == REG_CREATED_NEW_KEY)
         update_reg_entries();
@@ -5790,6 +5825,43 @@ static BOOL freetype_EnumFonts( PHYSDEV dev, LPLOGFONTW plf, FONTENUMPROCW proc,
     LOGFONTW lf;
     struct enum_charset_list enum_charsets;
 
+    /* for the photoshop japanese font hack */
+    char name[MAX_PATH], *p;
+    INT blockNum=0;
+    static const CHAR BLOCK_LIST[][MAX_PATH] = {
+"/System/Library/Fonts/\xe3\x83\x92\xe3\x83\xa9\xe3\x82\xad\xe3\x82\x99\xe3\x83\x8e\xe8\xa7\x92\xe3\x82\xb3\xe3\x82\x99 Std W8.otf",
+"/System/Library/Fonts/\xe3\x83\x92\xe3\x83\xa9\xe3\x82\xad\xe3\x82\x99\xe3\x83\x8e\xe6\x98\x8e\xe6\x9c\x9d Pro W3.otf",
+"/System/Library/Fonts/\xe3\x83\x92\xe3\x83\xa9\xe3\x82\xad\xe3\x82\x99\xe3\x83\x8e\xe8\xa7\x92\xe3\x82\xb3\xe3\x82\x99 Pro W3.otf",
+"/System/Library/Fonts/\xe3\x83\x92\xe3\x83\xa9\xe3\x82\xad\xe3\x82\x99\xe3\x83\x8e\xe6\x98\x8e\xe6\x9c\x9d Pro W6.otf",
+"/System/Library/Fonts/\xe3\x83\x92\xe3\x83\xa9\xe3\x82\xad\xe3\x82\x99\xe3\x83\x8e\xe8\xa7\x92\xe3\x82\xb3\xe3\x82\x99 Pro W6.otf",
+"/System/Library/Fonts/\xe3\x83\x92\xe3\x83\xa9\xe3\x82\xad\xe3\x82\x99\xe3\x83\x8e\xe4\xb8\xb8\xe3\x82\xb3\xe3\x82\x99 Pro W4.otf",
+/* for Leopard new fonts and things moved */
+"/System/Library/Fonts/\xe3\x83\x92\xe3\x83\xa9\xe3\x82\xad\xe3\x82\x99\xe3\x83\x8e\xe6\x98\x8e\xe6\x9c\x9d ProN W3.otf",
+"/System/Library/Fonts/\xe3\x83\x92\xe3\x83\xa9\xe3\x82\xad\xe3\x82\x99\xe3\x83\x8e\xe8\xa7\x92\xe3\x82\xb3\xe3\x82\x99 ProN W3.otf",
+"/System/Library/Fonts/\xe3\x83\x92\xe3\x83\xa9\xe3\x82\xad\xe3\x82\x99\xe3\x83\x8e\xe6\x98\x8e\xe6\x9c\x9d ProN W6.otf",
+"/System/Library/Fonts/\xe3\x83\x92\xe3\x83\xa9\xe3\x82\xad\xe3\x82\x99\xe3\x83\x8e\xe8\xa7\x92\xe3\x82\xb3\xe3\x82\x99 ProN W6.otf",
+"/Library/Fonts/\xe3\x83\x92\xe3\x83\xa9\xe3\x82\xad\xe3\x82\x99\xe3\x83\x8e\xe8\xa7\x92\xe3\x82\xb3\xe3\x82\x99 StdN W8.otf",
+"/Library/Fonts/\xe3\x83\x92\xe3\x83\xa9\xe3\x82\xad\xe3\x82\x99\xe3\x83\x8e\xe8\xa7\x92\xe3\x82\xb3\xe3\x82\x99 Std W8.otf",
+"/Library/Fonts/\xe3\x83\x92\xe3\x83\xa9\xe3\x82\xad\xe3\x82\x99\xe3\x83\x8e\xe6\x98\x8e\xe6\x9c\x9d Pro W3.otf",
+"/Library/Fonts/\xe3\x83\x92\xe3\x83\xa9\xe3\x82\xad\xe3\x82\x99\xe3\x83\x8e\xe8\xa7\x92\xe3\x82\xb3\xe3\x82\x99 Pro W3.otf",
+"/Library/Fonts/\xe3\x83\x92\xe3\x83\xa9\xe3\x82\xad\xe3\x82\x99\xe3\x83\x8e\xe6\x98\x8e\xe6\x9c\x9d Pro W6.otf",
+"/Library/Fonts/\xe3\x83\x92\xe3\x83\xa9\xe3\x82\xad\xe3\x82\x99\xe3\x83\x8e\xe8\xa7\x92\xe3\x82\xb3\xe3\x82\x99 Pro W6.otf",
+"/Library/Fonts/\xe3\x83\x92\xe3\x83\xa9\xe3\x82\xad\xe3\x82\x99\xe3\x83\x8e\xe4\xb8\xb8\xe3\x82\xb3\xe3\x82\x99 Pro W4.otf",
+"/Library/Fonts/\xe3\x83\x92\xe3\x83\xa9\xe3\x82\xad\xe3\x82\x99\xe3\x83\x8e\xe4\xb8\xb8\xe3\x82\xb3\xe3\x82\x99 ProN W4.otf"
+    };
+
+    GetModuleFileNameA(GetModuleHandleA(NULL),name,MAX_PATH);
+    p = strrchr(name,'\\');
+    if (p)
+        p++;
+    else
+        p = name;
+    if ((strcasecmp(p,"photoshop.exe")==0) ||
+        (strcasecmp(p,"imageready.exe")==0))
+        blockNum = 18;
+    else
+        blockNum = 0;
+
     if (!plf)
     {
         lf.lfCharSet = DEFAULT_CHARSET;
@@ -5819,6 +5891,24 @@ static BOOL freetype_EnumFonts( PHYSDEV dev, LPLOGFONTW plf, FONTENUMPROCW proc,
             face_list = get_face_list_from_family(family);
             LIST_FOR_EACH_ENTRY( face, face_list, Face, entry ) {
                 if (!face_matches(family->FamilyName, face, face_name)) continue;
+                if (blockNum>0)
+                {
+                    int i = 0;
+                    BOOL blocked = FALSE;
+                    char *file = strWtoA( CP_UNIXCP, face->file );
+                    for ( i = 0; i < blockNum; i++)
+                        if (lstrcmpA(file,BLOCK_LIST[i])==0)
+                        {
+                            blocked = TRUE;
+                            break;
+                        }
+                    HeapFree( GetProcessHeap(), 0, file );
+                    if (blocked)
+                    {
+                        TRACE("Blocked for Photoshop\n");
+                        continue;
+                    }
+                }
                 if (!enum_face_charsets(family, face, &enum_charsets, proc, lparam)) return FALSE;
 	    }
 	}
@@ -5826,6 +5916,24 @@ static BOOL freetype_EnumFonts( PHYSDEV dev, LPLOGFONTW plf, FONTENUMPROCW proc,
         LIST_FOR_EACH_ENTRY( family, &font_list, Family, entry ) {
             face_list = get_face_list_from_family(family);
             face = LIST_ENTRY(list_head(face_list), Face, entry);
+            if (blockNum>0)
+            {
+                int i = 0;
+                BOOL blocked = FALSE;
+                char *file = strWtoA( CP_UNIXCP, face->file );
+                for ( i = 0; i < blockNum; i++)
+                    if (lstrcmpA(file,BLOCK_LIST[i])==0)
+                    {
+                        blocked = TRUE;
+                        break;
+                    }
+                HeapFree( GetProcessHeap(), 0, file );
+                if (blocked)
+                {
+                    TRACE("Blocked for Photoshop\n");
+                    continue;
+                }
+            }
             if (!enum_face_charsets(family, face, &enum_charsets, proc, lparam)) return FALSE;
 	}
     }
@@ -6628,6 +6736,33 @@ static DWORD get_glyph_outline(GdiFont *incoming_font, UINT glyph, UINT format,
       {
 	unsigned int max_level, row, col;
 	BYTE *start, *ptr;
+
+        /****************** CodeWeavers hack to fix HL2 crash **************************
+         *
+         * Both glyphs 0x2e and 0x39 of this font get rendered to a larger
+         * size with FreeType than under Windows, and HL2 uses a fixed size
+         * buffer on the stack to copy the data into.  For now we'll clip glyphs
+         * from that font into a rather smaller BBox
+         *
+         ******************************************************************************/
+        if(!strcmp(ft_face->family_name, "HL2MP") ||
+           !strcmp(ft_face->family_name, "csd"))
+        {
+            int i;
+            if(width) width--;
+ 
+            for(i = 0; i < 2; i++)
+            {
+                if(height)
+                {
+                    height--;
+                    lpgm->gmptGlyphOrigin.y--;
+                }
+            }
+            gm.gmBlackBoxX = width  ? width  : 1;
+            gm.gmBlackBoxY = height ? height : 1;
+        }
+        /*********************************** End CW's hack ****************************/
 
 	pitch = (width + 3) / 4 * 4;
 	needed = pitch * height;

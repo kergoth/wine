@@ -1488,7 +1488,7 @@ static void shader_trace_init(const struct wined3d_shader_frontend *fe, void *fe
     }
 }
 
-static void shader_cleanup(struct wined3d_shader *shader)
+void shader_cleanup(struct wined3d_shader *shader)
 {
     shader->device->shader_backend->shader_destroy(shader);
     HeapFree(GetProcessHeap(), 0, shader->reg_maps.constf);
@@ -1742,9 +1742,10 @@ ULONG CDECL wined3d_shader_decref(struct wined3d_shader *shader)
 
     if (!refcount)
     {
-        shader_cleanup(shader);
+        const struct wined3d_device *device = shader->device;
+
         shader->parent_ops->wined3d_object_destroyed(shader->parent);
-        HeapFree(GetProcessHeap(), 0, shader);
+        wined3d_cs_emit_shader_cleanup(device->cs, shader);
     }
 
     return refcount;
@@ -2036,7 +2037,7 @@ void find_ps_compile_args(const struct wined3d_state *state, const struct wined3
     memset(args, 0, sizeof(*args)); /* FIXME: Make sure all bits are set. */
     if (!gl_info->supported[ARB_FRAMEBUFFER_SRGB] && state->render_states[WINED3D_RS_SRGBWRITEENABLE])
     {
-        const struct wined3d_format *rt_format = state->fb->render_targets[0]->format;
+        const struct wined3d_format *rt_format = state->fb.render_targets[0]->format;
         if (rt_format->flags & WINED3DFMT_FLAG_SRGB_WRITE)
         {
             static unsigned int warned = 0;
@@ -2198,6 +2199,16 @@ void find_ps_compile_args(const struct wined3d_state *state, const struct wined3
         {
             args->fog = WINED3D_FFP_PS_FOG_OFF;
         }
+    }
+    /* Only inser the KIL fragment.texcoord[clip] line if clipping is used.
+     * It is expensive because KIL can break early Z discard. Its cheaper to
+     * have two shaders than KIL needlessly. The same applies to the
+     * clipplane emulation in GLSL with discard. */
+    if (!shader->device->adapter->d3d_info.vs_clipping && use_vs(state)
+            && state->render_states[WINED3D_RS_CLIPPING]
+            && state->render_states[WINED3D_RS_CLIPPLANEENABLE])
+    {
+        args->clip = TRUE;
     }
 }
 

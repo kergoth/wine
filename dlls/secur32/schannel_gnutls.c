@@ -477,6 +477,17 @@ BOOL schan_imp_init(void)
 {
     int ret;
 
+if (1) { /* CROSSOVER HACK - bug 10151 */
+    const char *libgnutls_name_candidates[] = {SONAME_LIBGNUTLS,
+                                               "libgnutls.so.28",
+                                               "libgnutls-deb0.so.28",
+                                               "libgnutls.so.26",
+                                               NULL};
+    int i;
+    for (i=0; libgnutls_name_candidates[i] && !libgnutls_handle; i++)
+        libgnutls_handle = wine_dlopen(libgnutls_name_candidates[i], RTLD_NOW, NULL, 0);
+}
+else
     libgnutls_handle = wine_dlopen(SONAME_LIBGNUTLS, RTLD_NOW, NULL, 0);
     if (!libgnutls_handle)
     {

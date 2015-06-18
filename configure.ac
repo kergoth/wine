@@ -431,6 +431,7 @@ AC_CHECK_HEADERS(\
 	linux/ioctl.h \
 	linux/joystick.h \
 	linux/major.h \
+	linux/netlink.h \
 	linux/param.h \
 	linux/serial.h \
 	linux/types.h \
@@ -474,6 +475,7 @@ AC_CHECK_HEADERS(\
 	sys/inotify.h \
 	sys/ioctl.h \
 	sys/ipc.h \
+	sys/kern_event.h \
 	sys/limits.h \
 	sys/link.h \
 	sys/mman.h \
@@ -690,7 +692,7 @@ AC_SUBST(LOADER_RULES,["
 all: wine.inf
 
 install install-lib:: wine-installed
-	\$(INSTALL_PROGRAM) wine-installed \$(DESTDIR)\$(bindir)/$wine_binary
+	\$(INSTALL_PROGRAM) wine-installed \$(DESTDIR)\$(bindir)/wineloader
 
 uninstall::
 	\$(RM) \$(DESTDIR)\$(bindir)/$wine_binary
@@ -760,9 +762,8 @@ uninstall::
     AC_SUBST(CORESERVICES_LIBS,"-framework CoreServices")
     AC_SUBST(APPKIT_LIBS,"-framework AppKit")
     LDEXECFLAGS="-image_base 0x7bf00000 -Wl,-segaddr,WINE_DOS,0x00001000,-segaddr,WINE_SHAREDHEAP,0x7f000000,-sectcreate,__TEXT,__info_plist,wine_info.plist"
-    case $host_os in
-      darwin11*) LDEXECFLAGS="-Wl,-macosx_version_min,10.6 $LDEXECFLAGS" ;;
-    esac
+    WINE_TRY_CFLAGS([-Wl,-no_pie],
+                    [LDEXECFLAGS="-Wl,-no_pie $LDEXECFLAGS"])
     if test "$ac_cv_header_DiskArbitration_DiskArbitration_h" = "yes"
     then
         dnl DiskArbitration API is not public on Darwin < 8.0, use it only if header found
@@ -887,9 +888,7 @@ wine-installed: main.o wine_info.plist
 
   linux-android*)
     DLLFLAGS="$DLLFLAGS -fPIC"
-    DLLPREFIX="lib"
     LDEXECFLAGS=""
-    dlldir="\${libdir}"
     WINE_TRY_CFLAGS([-fPIC -Wl,--export-dynamic],
                     [LDEXECFLAGS="-Wl,--export-dynamic"])
     WINE_TRY_CFLAGS([-fPIC -Wl,--rpath,\$ORIGIN/../lib],
@@ -965,6 +964,15 @@ wine-installed: main.o
 
       WINE_TRY_CFLAGS([-Wl,--enable-new-dtags],
                       [LDRPATH_INSTALL="$LDRPATH_INSTALL -Wl,--enable-new-dtags"])
+
+      AC_CACHE_CHECK([whether gcc accepts -static-libgcc], ac_cv_c_dll_static_libgcc,
+        [WINE_TRY_CFLAGS([-shared -static-libgcc],
+                         ac_cv_c_dll_static_libgcc="yes",ac_cv_c_dll_static_libgcc="no")])
+      if test "$ac_cv_c_dll_static_libgcc" = "yes"
+      then
+        LDSHARED="$LDSHARED -static-libgcc"
+        LDDLLFLAGS="$LDDLLFLAGS -static-libgcc"
+      fi
 
       case $host_cpu in
         *i[[3456789]]86* | x86_64)
@@ -1235,8 +1243,8 @@ This probably prevents linking to OpenGL. Try deleting the file and restarting c
 		     $X_LIBS -lm $X_EXTRA_LIBS)
         if test "x$with_glu" != "xno"
         then
-            AC_CHECK_LIB(GLU,gluLookAt,[:],,[$OPENGL_LIBS $X_LIBS -lm $X_EXTRA_LIBS])
-            WINE_NOTICE_WITH(glu,[test "x$ac_cv_lib_GLU_gluLookAt" != xyes],
+            WINE_CHECK_SONAME(GLU,gluLookAt,,,[$OPENGL_LIBS $X_LIBS -lm $X_EXTRA_LIBS])
+            WINE_NOTICE_WITH(glu,[test "x$ac_cv_lib_soname_GLU" = "x"],
                              [libGLU ${notice_platform}development files not found, GLU won't be supported.])
         fi
 
@@ -1260,7 +1268,7 @@ WINE_ERROR_WITH(x,[test "x$X_LIBS" = "x"],[X ${notice_platform}development files
 without X support, which probably isn't what you want. You will need
 to install ${notice_platform}development packages of Xlib/Xfree86 at the very least.])
 
-test "x$ac_cv_lib_GLU_gluLookAt" != xyes && enable_glu32=${enable_glu32:-no}
+test "x$ac_cv_lib_soname_GLU" = "x" && enable_glu32=${enable_glu32:-no}
 
 dnl **** Check for OpenCL ****
 if test "$ac_cv_header_CL_cl_h" = "yes"
@@ -1757,6 +1765,7 @@ test -n "$ALSA_LIBS" || enable_winealsa_drv=${enable_winealsa_drv:-no}
 test -n "$COREAUDIO_LIBS" || enable_winecoreaudio_drv=${enable_winecoreaudio_drv:-no}
 test "x$ac_cv_member_oss_sysinfo_numaudioengines" = xyes || enable_wineoss_drv=${enable_wineoss_drv:-no}
 test "$ac_cv_header_linux_joystick_h" = "yes" || enable_winejoystick_drv=${enable_winejoystick_drv:-no}
+test "$ac_cv_header_IOKit_hid_IOHIDLib_h" = "yes" || enable_winejoystick_osx_drv=${enable_winejoystick_osx_drv:-no}
 
 dnl **** Check for any sound system ****
 if test "x$ALSA_LIBS$COREAUDIO_LIBS" = "x" -a \
@@ -2635,6 +2644,7 @@ WINE_CONFIG_SYMLINK(po,po,[LINGUAS])
 WINE_CONFIG_SYMLINK(,tools,[wine],,winewrapper)
 WINE_CONFIG_SYMLINK(,tools,[wine64],enable_win64,winewrapper)
 
+WINE_CONFIG_DLL(32autole)
 WINE_CONFIG_DLL(acledit)
 WINE_CONFIG_DLL(aclui,,[implib])
 WINE_CONFIG_DLL(activeds,,[implib])
@@ -2910,6 +2920,8 @@ WINE_CONFIG_DLL(iccvid,,[po])
 WINE_CONFIG_DLL(icmp)
 WINE_CONFIG_DLL(ieframe,,[clean,implib,po])
 WINE_CONFIG_TEST(dlls/ieframe/tests)
+WINE_CONFIG_DLL(ieinfo5.ocx)
+WINE_CONFIG_DLL(iernonce)
 WINE_CONFIG_DLL(ifsmgr.vxd,enable_win16)
 WINE_CONFIG_DLL(imaadp32.acm)
 WINE_CONFIG_DLL(imagehlp,,[implib])
@@ -3252,6 +3264,7 @@ WINE_CONFIG_LIB(winecrt0)
 WINE_CONFIG_DLL(wined3d,,[implib])
 WINE_CONFIG_DLL(winegstreamer)
 WINE_CONFIG_DLL(winejoystick.drv)
+WINE_CONFIG_DLL(winejoystick_osx.drv)
 WINE_CONFIG_DLL(winemac.drv)
 WINE_CONFIG_DLL(winemapi)
 WINE_CONFIG_DLL(winemp3.acm)
@@ -3327,7 +3340,7 @@ WINE_CONFIG_PROGRAM(aspnet_regiis,,[install])
 WINE_CONFIG_PROGRAM(attrib,,[install,po])
 WINE_CONFIG_PROGRAM(cabarc,,[install])
 WINE_CONFIG_PROGRAM(cacls,,[install])
-WINE_CONFIG_PROGRAM(clock,,[install,po])
+WINE_CONFIG_PROGRAM(clock,,[po])
 WINE_CONFIG_PROGRAM(cmd,,[install,po])
 WINE_CONFIG_TEST(programs/cmd/tests)
 WINE_CONFIG_PROGRAM(conhost,,[install])
@@ -3342,29 +3355,29 @@ WINE_CONFIG_PROGRAM(extrac32,,[install])
 WINE_CONFIG_PROGRAM(findstr,,[install])
 WINE_CONFIG_PROGRAM(hh,,[install])
 WINE_CONFIG_PROGRAM(hostname,,[install,po])
-WINE_CONFIG_PROGRAM(icinfo,,[install])
+WINE_CONFIG_PROGRAM(icinfo)
 WINE_CONFIG_PROGRAM(iexplore,,[install])
 WINE_CONFIG_PROGRAM(ipconfig,,[install,po])
 WINE_CONFIG_PROGRAM(lodctr,,[install])
 WINE_CONFIG_PROGRAM(mofcomp,,[install])
 WINE_CONFIG_PROGRAM(mshta,,[install])
-WINE_CONFIG_PROGRAM(msiexec,,[install,installbin,manpage])
+WINE_CONFIG_PROGRAM(msiexec,,[install,manpage])
 WINE_CONFIG_PROGRAM(net,,[install,po])
 WINE_CONFIG_PROGRAM(netsh,,[install])
 WINE_CONFIG_PROGRAM(netstat,,[install,po])
 WINE_CONFIG_PROGRAM(ngen,,[install])
-WINE_CONFIG_PROGRAM(notepad,,[install,installbin,manpage,po])
+WINE_CONFIG_PROGRAM(notepad,,[install,manpage,po])
 WINE_CONFIG_PROGRAM(oleview,,[install,po])
 WINE_CONFIG_PROGRAM(ping,,[install])
 WINE_CONFIG_PROGRAM(plugplay,,[install])
 WINE_CONFIG_PROGRAM(presentationfontcache,,[install])
-WINE_CONFIG_PROGRAM(progman,,[install,po])
+WINE_CONFIG_PROGRAM(progman,,[po])
 WINE_CONFIG_PROGRAM(reg,,[install,po])
 WINE_CONFIG_PROGRAM(regasm,,[install])
-WINE_CONFIG_PROGRAM(regedit,,[install,installbin,manpage,po])
+WINE_CONFIG_PROGRAM(regedit,,[install,manpage,po])
 WINE_CONFIG_TEST(programs/regedit/tests)
 WINE_CONFIG_PROGRAM(regsvcs,,[install])
-WINE_CONFIG_PROGRAM(regsvr32,,[install,installbin,manpage,po])
+WINE_CONFIG_PROGRAM(regsvr32,,[install,manpage,po])
 WINE_CONFIG_PROGRAM(rpcss,,[clean,install])
 WINE_CONFIG_PROGRAM(rundll.exe16,enable_win16,[install])
 WINE_CONFIG_PROGRAM(rundll32,,[install])
@@ -3384,19 +3397,19 @@ WINE_CONFIG_PROGRAM(taskmgr,,[install,po])
 WINE_CONFIG_PROGRAM(termsv,,[install])
 WINE_CONFIG_PROGRAM(uninstaller,,[install,po])
 WINE_CONFIG_PROGRAM(unlodctr,,[install])
-WINE_CONFIG_PROGRAM(view,,[install,po])
+WINE_CONFIG_PROGRAM(view,,[po])
 WINE_CONFIG_PROGRAM(wevtutil,,[install])
-WINE_CONFIG_PROGRAM(wineboot,,[install,installbin,manpage,po])
+WINE_CONFIG_PROGRAM(wineboot,,[install,manpage,po])
 WINE_CONFIG_PROGRAM(winebrowser,,[install])
-WINE_CONFIG_PROGRAM(winecfg,,[install,installbin,manpage,po])
-WINE_CONFIG_PROGRAM(wineconsole,,[install,installbin,manpage,po])
-WINE_CONFIG_PROGRAM(winedbg,,[install,installbin,manpage,po])
+WINE_CONFIG_PROGRAM(winecfg,,[install,manpage,po])
+WINE_CONFIG_PROGRAM(wineconsole,,[install,manpage,po])
+WINE_CONFIG_PROGRAM(winedbg,,[install,manpage,po])
 WINE_CONFIG_PROGRAM(winedevice,,[install])
-WINE_CONFIG_PROGRAM(winefile,,[install,installbin,manpage,po])
+WINE_CONFIG_PROGRAM(winefile,,[install,manpage,po])
 WINE_CONFIG_PROGRAM(winemenubuilder,,[install])
-WINE_CONFIG_PROGRAM(winemine,,[install,installbin,manpage,po])
+WINE_CONFIG_PROGRAM(winemine,,[manpage,po])
 WINE_CONFIG_PROGRAM(winemsibuilder,,[install])
-WINE_CONFIG_PROGRAM(winepath,,[install,installbin,manpage])
+WINE_CONFIG_PROGRAM(winepath,,[install,manpage])
 WINE_CONFIG_PROGRAM(winetest,,[clean])
 WINE_CONFIG_PROGRAM(winevdm,enable_win16,[install])
 WINE_CONFIG_PROGRAM(winhelp.exe16,enable_win16,[install])

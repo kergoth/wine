@@ -182,6 +182,7 @@ static inline NSUInteger adjusted_modifiers_for_option_behavior(NSUInteger modif
 @property (nonatomic) pthread_mutex_t* surface_mutex;
 
 @property (copy, nonatomic) NSBezierPath* shape;
+@property (copy, nonatomic) NSData* shapeData;
 @property (nonatomic) BOOL shapeChangedSinceLastDraw;
 @property (readonly, nonatomic) BOOL needsTransparency;
 
@@ -193,6 +194,8 @@ static inline NSUInteger adjusted_modifiers_for_option_behavior(NSUInteger modif
 @property (nonatomic) BOOL commandDone;
 
 @property (retain, nonatomic) NSTimer* liveResizeDisplayTimer;
+
+@property (readonly, copy, nonatomic) NSArray* childWineWindows;
 
     - (void) updateColorSpace;
 
@@ -236,6 +239,17 @@ static inline NSUInteger adjusted_modifiers_for_option_behavior(NSUInteger modif
         if ([window contentView] != self)
             return;
 
+        if (window.shapeChangedSinceLastDraw && window.shape && !window.colorKeyed && !window.usePerPixelAlpha)
+        {
+            [[NSColor clearColor] setFill];
+            NSRectFill(rect);
+
+            [window.shape addClip];
+
+            [[NSColor windowBackgroundColor] setFill];
+            NSRectFill(rect);
+        }
+
         if (window.surface && window.surface_mutex &&
             !pthread_mutex_lock(window.surface_mutex))
         {
@@ -251,6 +265,7 @@ static inline NSUInteger adjusted_modifiers_for_option_behavior(NSUInteger modif
 
                 context = (CGContextRef)[[NSGraphicsContext currentContext] graphicsPort];
                 CGContextSetBlendMode(context, kCGBlendModeCopy);
+                CGContextSetInterpolationQuality(context, kCGInterpolationNone);
 
                 for (i = 0; i < count; i++)
                 {
@@ -289,7 +304,7 @@ static inline NSUInteger adjusted_modifiers_for_option_behavior(NSUInteger modif
         // If the window may be transparent, then we have to invalidate the
         // shadow every time we draw.  Also, if this is the first time we've
         // drawn since changing from transparent to opaque.
-        if (![window isOpaque] || window.shapeChangedSinceLastDraw)
+        if (window.colorKeyed || window.usePerPixelAlpha || window.shapeChangedSinceLastDraw)
         {
             window.shapeChangedSinceLastDraw = FALSE;
             [window invalidateShadow];
@@ -529,7 +544,7 @@ static inline NSUInteger adjusted_modifiers_for_option_behavior(NSUInteger modif
 
     @synthesize disabled, noActivate, floating, fullscreen, fakingClose, latentParentWindow, hwnd, queue;
     @synthesize surface, surface_mutex;
-    @synthesize shape, shapeChangedSinceLastDraw;
+    @synthesize shape, shapeData, shapeChangedSinceLastDraw;
     @synthesize colorKeyed, colorKeyRed, colorKeyGreen, colorKeyBlue;
     @synthesize usePerPixelAlpha;
     @synthesize imeData, commandDone;
@@ -623,6 +638,7 @@ static inline NSUInteger adjusted_modifiers_for_option_behavior(NSUInteger modif
         [latentChildWindows release];
         [latentParentWindow release];
         [shape release];
+        [shapeData release];
         [super dealloc];
     }
 
@@ -678,7 +694,7 @@ static inline NSUInteger adjusted_modifiers_for_option_behavior(NSUInteger modif
             NSUInteger style = [self styleMask];
 
             if (behavior & NSWindowCollectionBehaviorParticipatesInCycle &&
-                style & NSResizableWindowMask && !(style & NSUtilityWindowMask))
+                style & NSResizableWindowMask && !(style & NSUtilityWindowMask) && !maximized)
             {
                 behavior |= NSWindowCollectionBehaviorFullScreenPrimary;
                 behavior &= ~NSWindowCollectionBehaviorFullScreenAuxiliary;
@@ -688,7 +704,7 @@ static inline NSUInteger adjusted_modifiers_for_option_behavior(NSUInteger modif
                 behavior &= ~NSWindowCollectionBehaviorFullScreenPrimary;
                 behavior |= NSWindowCollectionBehaviorFullScreenAuxiliary;
                 if (style & NSFullScreenWindowMask)
-                    [self toggleFullScreen:nil];
+                    [super toggleFullScreen:nil];
             }
         }
 
@@ -770,7 +786,7 @@ static inline NSUInteger adjusted_modifiers_for_option_behavior(NSUInteger modif
                 if (captured)
                     level = CGShieldingWindowLevel() + 1; /* Need +1 or we don't get mouse moves */
                 else
-                    level = NSMainMenuWindowLevel + 1;
+                    level = NSStatusWindowLevel + 1;
 
                 if (self.floating)
                     level++;
@@ -816,7 +832,7 @@ static inline NSUInteger adjusted_modifiers_for_option_behavior(NSUInteger modif
                 // Became non-floating.  If parent of floating children, make that
                 // relationship latent.
                 WineWindow* child;
-                for (child in [[[self childWindows] copy] autorelease])
+                for (child in [self childWineWindows])
                 {
                     if (child.floating)
                         [child becameIneligibleChild];
@@ -830,25 +846,6 @@ static inline NSUInteger adjusted_modifiers_for_option_behavior(NSUInteger modif
 
             [[WineApplicationController sharedController] adjustWindowLevels];
         }
-
-        behavior = NSWindowCollectionBehaviorDefault;
-        if (state->excluded_by_expose)
-            behavior |= NSWindowCollectionBehaviorTransient;
-        else
-            behavior |= NSWindowCollectionBehaviorManaged;
-        if (state->excluded_by_cycle)
-        {
-            behavior |= NSWindowCollectionBehaviorIgnoresCycle;
-            if ([self isOrderedIn])
-                [NSApp removeWindowsItem:self];
-        }
-        else
-        {
-            behavior |= NSWindowCollectionBehaviorParticipatesInCycle;
-            if ([self isOrderedIn])
-                [NSApp addWindowsItem:self title:[self title] filename:NO];
-        }
-        [self adjustFullScreenBehavior:behavior];
 
         if (state->minimized_valid)
         {
@@ -891,6 +888,25 @@ static inline NSUInteger adjusted_modifiers_for_option_behavior(NSUInteger modif
             maximized = state->maximized;
             [self adjustFeaturesForState];
         }
+
+        behavior = NSWindowCollectionBehaviorDefault;
+        if (state->excluded_by_expose)
+            behavior |= NSWindowCollectionBehaviorTransient;
+        else
+            behavior |= NSWindowCollectionBehaviorManaged;
+        if (state->excluded_by_cycle)
+        {
+            behavior |= NSWindowCollectionBehaviorIgnoresCycle;
+            if ([self isOrderedIn])
+                [NSApp removeWindowsItem:self];
+        }
+        else
+        {
+            behavior |= NSWindowCollectionBehaviorParticipatesInCycle;
+            if ([self isOrderedIn])
+                [NSApp addWindowsItem:self title:[self title] filename:NO];
+        }
+        [self adjustFullScreenBehavior:behavior];
     }
 
     - (BOOL) addChildWineWindow:(WineWindow*)child assumeVisible:(BOOL)assumeVisible
@@ -994,7 +1010,7 @@ static inline NSUInteger adjusted_modifiers_for_option_behavior(NSUInteger modif
 
     - (void) becameIneligibleParentOrChild
     {
-        NSArray* childWindows = [self childWindows];
+        NSArray* childWindows = [self childWineWindows];
 
         [self becameIneligibleChild];
 
@@ -1002,7 +1018,6 @@ static inline NSUInteger adjusted_modifiers_for_option_behavior(NSUInteger modif
         {
             WineWindow* child;
 
-            childWindows = [[childWindows copy] autorelease];
             for (child in childWindows)
             {
                 child.latentParentWindow = self;
@@ -1083,7 +1098,7 @@ static inline NSUInteger adjusted_modifiers_for_option_behavior(NSUInteger modif
 
         // Get our child windows and sort them in the reverse of the desired
         // z-order (back-to-front).
-        origChildren = [self childWindows];
+        origChildren = [self childWineWindows];
         children = [[origChildren mutableCopy] autorelease];
         [children sortWithOptions:NSSortStable
                   usingComparator:^NSComparisonResult(id obj1, id obj2){
@@ -1297,7 +1312,7 @@ static inline NSUInteger adjusted_modifiers_for_option_behavior(NSUInteger modif
                     [self setContentMaxSize:NSMakeSize(FLT_MAX, FLT_MAX)];
                 }
 
-                if (equalSizes && [[self childWindows] count])
+                if (equalSizes && [[self childWineWindows] count])
                 {
                     // If we change the window frame such that the origin moves
                     // but the size doesn't change, then Cocoa moves child
@@ -1373,11 +1388,15 @@ static inline NSUInteger adjusted_modifiers_for_option_behavior(NSUInteger modif
     {
         if (![self isOpaque] && !self.needsTransparency)
         {
+            self.shapeChangedSinceLastDraw = TRUE;
+            [[self contentView] setNeedsDisplay:YES];
             [self setBackgroundColor:[NSColor windowBackgroundColor]];
             [self setOpaque:YES];
         }
         else if ([self isOpaque] && self.needsTransparency)
         {
+            self.shapeChangedSinceLastDraw = TRUE;
+            [[self contentView] setNeedsDisplay:YES];
             [self setBackgroundColor:[NSColor clearColor]];
             [self setOpaque:NO];
         }
@@ -1386,7 +1405,6 @@ static inline NSUInteger adjusted_modifiers_for_option_behavior(NSUInteger modif
     - (void) setShape:(NSBezierPath*)newShape
     {
         if (shape == newShape) return;
-        if (shape && newShape && [shape isEqual:newShape]) return;
 
         if (shape)
         {
@@ -1547,7 +1565,9 @@ static inline NSUInteger adjusted_modifiers_for_option_behavior(NSUInteger modif
 
         if ([menuItem action] == @selector(makeKeyAndOrderFront:))
             ret = [self isKeyWindow] || (!self.disabled && !self.noActivate);
-        if ([menuItem action] == @selector(toggleFullScreen:) && self.disabled)
+        else if ([menuItem action] == @selector(undo:)) // CrossOver Hack 10912: Mac Edit menu
+            ret = TRUE;
+        if ([menuItem action] == @selector(toggleFullScreen:) && (self.disabled || maximized))
             ret = NO;
 
         return ret;
@@ -1577,6 +1597,69 @@ static inline NSUInteger adjusted_modifiers_for_option_behavior(NSUInteger modif
             [super sendEvent:event];
     }
 
+    // CrossOver Hack 10912: Mac Edit menu
+    - (void) sendEditMenuCommand:(int)command
+    {
+        macdrv_event* event;
+        NSTimeInterval now = [[NSProcessInfo processInfo] systemUptime];
+
+        if (mac_edit_menu == MAC_EDIT_MENU_DISABLED) // Shouldn't get here
+        {
+            ERR(@"The Mac Edit menu is supposed to be disabled\n");
+            NSBeep();
+            return;
+        }
+
+        event = macdrv_create_event(EDIT_MENU_COMMAND, self);
+        event->edit_menu_command.command = command;
+        event->edit_menu_command.time_ms = [[WineApplicationController sharedController] ticksForEventTime:now];
+
+        [queue postEvent:event];
+
+        macdrv_release_event(event);
+
+        // This is an even grosser hack than the rest of the support for the Edit
+        // menu.  We are deliberately leaving ourselves with an incorrect notion
+        // of the current modifier key state (for the case where the user used a
+        // Command-key shortcut to invoke an Edit menu item).  Both Wine and this
+        // class pretend that Command/Alt are not pressed so that, when the user
+        // actually releases the key, it doesn't put focus on the menu bar.  If
+        // the user keeps Command pressed and types another key, we'll think that
+        // Command was newly pressed and generate the appropriate event to get
+        // everybody back in sync.
+        lastModifierFlags &= ~(NX_COMMANDMASK | NX_DEVICELCMDKEYMASK | NX_DEVICERCMDKEYMASK);
+    }
+
+    - (void) copy:(id)sender
+    {
+        [self sendEditMenuCommand:EDIT_COMMAND_COPY];
+    }
+
+    - (void) cut:(id)sender
+    {
+        [self sendEditMenuCommand:EDIT_COMMAND_CUT];
+    }
+
+    - (void) delete:(id)sender
+    {
+        [self sendEditMenuCommand:EDIT_COMMAND_DELETE];
+    }
+
+    - (void) paste:(id)sender
+    {
+        [self sendEditMenuCommand:EDIT_COMMAND_PASTE];
+    }
+
+    - (void) selectAll:(id)sender
+    {
+        [self sendEditMenuCommand:EDIT_COMMAND_SELECT_ALL];
+    }
+
+    - (void) undo:(id)sender
+    {
+        [self sendEditMenuCommand:EDIT_COMMAND_UNDO];
+    }
+
     - (void) miniaturize:(id)sender
     {
         macdrv_event* event = macdrv_create_event(WINDOW_MINIMIZE_REQUESTED, self);
@@ -1586,8 +1669,17 @@ static inline NSUInteger adjusted_modifiers_for_option_behavior(NSUInteger modif
 
     - (void) toggleFullScreen:(id)sender
     {
-        if (!self.disabled)
+        if (!self.disabled && !maximized)
             [super toggleFullScreen:sender];
+    }
+
+    - (NSArray*) childWineWindows
+    {
+        NSArray* childWindows = self.childWindows;
+        NSIndexSet* indexes = [childWindows indexesOfObjectsPassingTest:^BOOL(id child, NSUInteger idx, BOOL *stop){
+            return [child isKindOfClass:[WineWindow class]];
+        }];
+        return [childWindows objectsAtIndexes:indexes];
     }
 
     // We normally use the generic/calibrated RGB color space for the window,
@@ -1698,6 +1790,19 @@ static inline NSUInteger adjusted_modifiers_for_option_behavior(NSUInteger modif
     {
         if ([self isVisible])
             [self becameEligibleParentOrChild];
+    }
+
+
+    /*
+     * ---------- NSObject method overrides ----------
+     */
+    // CrossOver Hack 10912: Mac Edit menu
+    - (BOOL) respondsToSelector:(SEL)selector
+    {
+        if (mac_edit_menu == MAC_EDIT_MENU_DISABLED && [[WineApplicationController sharedController] isEditMenuAction:selector])
+             return FALSE;
+
+        return [super respondsToSelector:selector];
     }
 
 
@@ -2364,16 +2469,24 @@ void macdrv_set_window_shape(macdrv_window w, const CGRect *rects, int count)
 
     OnMainThread(^{
         if (!rects || !count)
+        {
             window.shape = nil;
+            window.shapeData = nil;
+        }
         else
         {
-            NSBezierPath* path;
-            unsigned int i;
+            size_t length = sizeof(*rects) * count;
+            if (window.shapeData.length != length || memcmp(window.shapeData.bytes, rects, length))
+            {
+                NSBezierPath* path;
+                unsigned int i;
 
-            path = [NSBezierPath bezierPath];
-            for (i = 0; i < count; i++)
-                [path appendBezierPathWithRect:NSRectFromCGRect(rects[i])];
-            window.shape = path;
+                path = [NSBezierPath bezierPath];
+                for (i = 0; i < count; i++)
+                    [path appendBezierPathWithRect:NSRectFromCGRect(rects[i])];
+                window.shape = path;
+                window.shapeData = [NSData dataWithBytes:rects length:length];
+            }
         }
     });
 

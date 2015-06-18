@@ -70,6 +70,7 @@ struct file_op_queue
 
 struct file_queue
 {
+    DWORD                dummy;
     struct file_op_queue copy_queue;
     struct file_op_queue delete_queue;
     struct file_op_queue rename_queue;

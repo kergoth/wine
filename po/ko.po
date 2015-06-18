@@ -389,8 +389,8 @@ msgctxt "hotkey"
 msgid "None"
 msgstr "없음"
 
-#: comctl32.rc:31 cryptui.rc:230 regedit.rc:237 taskmgr.rc:434 winedbg.rc:60
-#: winedbg.rc:75 wordpad.rc:172
+#: comctl32.rc:31 cryptui.rc:230 regedit.rc:237 taskmgr.rc:434 winedbg.rc:58
+#: winedbg.rc:70 wordpad.rc:172
 msgid "Close"
 msgstr "닫기"
 
@@ -6676,7 +6676,7 @@ msgstr "전체 네트워크"
 msgid "Sound Selection"
 msgstr "사운드 선택"
 
-#: msacm32.rc:39 winedbg.rc:76
+#: msacm32.rc:39 winedbg.rc:71
 msgid "&Save As..."
 msgstr "다른 이름 저장(&S)..."
 
@@ -13660,35 +13660,37 @@ msgstr ""
 "이 프로그램 %s 은 심각한 문제에 직면해서 종료를 필요로 합니다. 우리는  불편"
 "을 끼쳐드린 거에 대하여 유감을 표함니다."
 
-#: winedbg.rc:58
+#: winedbg.rc:56
 msgid ""
 "This can be caused by a problem in the program or a deficiency in Wine. You "
-"may want to check the <a href=\"http://appdb.winehq.org\">Application "
-"Database</a> for tips about running this application."
+"may want to check <a href=\"http://www.codeweavers.com/compatibility/"
+"\">http://www.codeweavers.com/compatibility/</a> for tips about running this "
+"application."
 msgstr ""
 "이 문제는 프로그램의 문제나 Wine의 결함으로 인해 발생할 수 있습니다. 당신은 "
-"실행한 프로그램에 대하여   <a href=\"http://appdb.winehq.org\">Application "
-"Database</a> 에서 관련 팁을 살펴 볼 수 있습니다."
+"실행한 프로그램에 대하여   <a href=\"http://www.codeweavers.com/"
+"compatibility/\">http://www.codeweavers.com/compatibility/</a> 에서 관련 팁"
+"을 살펴 볼 수 있습니다."
 
-#: winedbg.rc:61
+#: winedbg.rc:59
 msgid "Show &Details"
 msgstr "자세히 보여주기(&D)"
 
-#: winedbg.rc:66
+#: winedbg.rc:64
 msgid "Program Error Details"
 msgstr "자세한 프로그램 에러"
 
-#: winedbg.rc:73
+#: winedbg.rc:68
 msgid ""
 "If this problem is not present under Windows and has not been reported yet, "
 "you can save the detailed information to a file using the \"Save As\" "
-"button, then <a href=\"http://wiki.winehq.org/Bugs\">file a bug report</a> "
-"and attach that file to the report."
+"button, then <a href=\"http://www.codeweavers.com/support/tickets/enter/"
+"\">file a bug report</a> and attach that file to the report."
 msgstr ""
 "만약 이 문제가 윈도우즈에는 존재하지 않고 아직 보고되지 않았다면,당신은  \"다"
 "른 이름으로 저장\" 버튼을 사용해서 자세한 정보를 파일로 저장해서, <a href="
-"\"http://wiki.winehq.org/Bugs\">버그 보고 파일</a>로 가서보고서에 파일을 같"
-"이 올리수 있습니다."
+"\"http://www.codeweavers.com/support/tickets/enter/\">버그 보고 파일</a>로 가"
+"서보고서에 파일을 같이 올리수 있습니다."
 
 #: winedbg.rc:38
 msgid "Wine program crash"

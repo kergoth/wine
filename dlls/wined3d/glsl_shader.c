@@ -150,6 +150,7 @@ struct glsl_shader_prog_link
     GLhandleARB programId;
     DWORD constant_update_mask;
     UINT constant_version;
+    DWORD clipplanes;
 };
 
 struct glsl_program_key
@@ -157,6 +158,7 @@ struct glsl_program_key
     GLhandleARB vs_id;
     GLhandleARB gs_id;
     GLhandleARB ps_id;
+    DWORD clipplanes;
 };
 
 struct shader_glsl_ctx_priv {
@@ -197,6 +199,7 @@ struct glsl_shader_private
         struct glsl_ps_compiled_shader *ps;
     } gl_shaders;
     UINT num_gl_shaders, shader_array_size;
+    DWORD clipplane_emulation;
 };
 
 struct glsl_ffp_vertex_shader
@@ -327,11 +330,17 @@ static void print_glsl_info_log(const struct wined3d_gl_info *gl_info, GLhandleA
 /* Context activation is done by the caller. */
 static void shader_glsl_compile(const struct wined3d_gl_info *gl_info, GLhandleARB shader, const char *src)
 {
+    WORD old_fpu_cw = wined3d_get_fpu_cw();
+
     TRACE("Compiling shader object %u.\n", shader);
     GL_EXTCALL(glShaderSourceARB(shader, 1, &src, NULL));
     checkGLcall("glShaderSourceARB");
+    if (old_fpu_cw != WINED3D_DEFAULT_FPU_CW)
+        wined3d_set_fpu_cw(WINED3D_DEFAULT_FPU_CW);
     GL_EXTCALL(glCompileShaderARB(shader));
     checkGLcall("glCompileShaderARB");
+    if (old_fpu_cw != WINED3D_DEFAULT_FPU_CW)
+        wined3d_set_fpu_cw(old_fpu_cw);
     print_glsl_info_log(gl_info, shader);
 }
 
@@ -979,10 +988,8 @@ static void shader_generate_glsl_declarations(const struct wined3d_context *cont
         const struct wined3d_shader_reg_maps *reg_maps, const struct shader_glsl_ctx_priv *ctx_priv)
 {
     const struct wined3d_shader_version *version = &reg_maps->shader_version;
-    const struct wined3d_state *state = &shader->device->state;
     const struct ps_compile_args *ps_args = ctx_priv->cur_ps_args;
     const struct wined3d_gl_info *gl_info = context->gl_info;
-    const struct wined3d_fb_state *fb = &shader->device->fb;
     unsigned int i, extra_constants_needed = 0;
     const struct wined3d_shader_lconst *lconst;
     const char *prefix;
@@ -1038,9 +1045,17 @@ static void shader_generate_glsl_declarations(const struct wined3d_context *cont
                  * Writing gl_ClipVertex requires one uniform for each
                  * clipplane as well. */
                 max_constantsF = gl_info->limits.glsl_vs_float_constants - 3;
-                if(ctx_priv->cur_vs_args->clip_enabled)
+                if (ctx_priv->cur_vs_args->clip_enabled)
                 {
-                    max_constantsF -= gl_info->limits.clipplanes;
+                    if (gl_info->quirks & WINED3D_CX_QUIRK_GLSL_CLIP_BROKEN)
+                    {
+                        /* The link program reads at most 4 clipplanes to emulate clipping */
+                        max_constantsF -= 4;
+                    }
+                    else
+                    {
+                        max_constantsF -= gl_info->limits.clipplanes;
+                    }
                 }
                 max_constantsF -= count_bits(reg_maps->integer_constants);
                 /* Strictly speaking a bool only uses one scalar, but the nvidia(Linux) compiler doesn't pack them properly,
@@ -1208,7 +1223,7 @@ static void shader_generate_glsl_declarations(const struct wined3d_context *cont
         {
             UINT in_count = min(vec4_varyings(version->major, gl_info), shader->limits.packed_input);
 
-            if (use_vs(state))
+            if (ps_args->vp_mode == vertexshader)
                 shader_addline(buffer, "varying vec4 %s_in[%u];\n", prefix, in_count);
             else
                 /* TODO: Write a replacement shader for the fixed function
@@ -1255,21 +1270,14 @@ static void shader_generate_glsl_declarations(const struct wined3d_context *cont
             }
             else
             {
-                float ycorrection[] =
-                {
-                    context->render_offscreen ? 0.0f : fb->render_targets[0]->height,
-                    context->render_offscreen ? 1.0f : -1.0f,
-                    0.0f,
-                    0.0f,
-                };
-
                 /* This happens because we do not have proper tracking of the
                  * constant registers that are actually used, only the max
-                 * limit of the shader version. */
+                 * limit of the shader version.
+                 *
+                 * FIXME 2: This is wrong, there's no need to do this. Get rid of
+                 * it and just create the uniform.
+                 */
                 FIXME("Cannot find a free uniform for vpos correction params\n");
-                shader_addline(buffer, "const vec4 ycorrection = ");
-                shader_glsl_append_imm_vec4(buffer, ycorrection);
-                shader_addline(buffer, ";\n");
             }
             shader_addline(buffer, "vec4 vpos;\n");
         }
@@ -2500,7 +2508,7 @@ static void shader_glsl_mov(const struct wined3d_shader_instruction *ins)
         /* We need to *round* to the nearest int here. */
         unsigned int mask_size = shader_glsl_get_write_mask_size(write_mask);
 
-        if (gl_info->supported[EXT_GPU_SHADER4])
+        if (gl_info->supported[EXT_GPU_SHADER4] && !(gl_info->quirks & WINED3D_CX_QUIRK_BROKEN_ROUND))
         {
             if (mask_size > 1)
                 shader_addline(buffer, "ivec%d(round(%s)));\n", mask_size, src0_param.param_str);
@@ -4168,6 +4176,24 @@ static void shader_glsl_input_pack(const struct wined3d_shader *shader, struct w
  * Vertex Shader Specific Code begins here
  ********************************************/
 
+static DWORD find_clipplanes(const struct wined3d_context *context,
+                             const struct wined3d_state *state,
+                             const struct wined3d_gl_info *gl_info,
+                             const struct wined3d_d3d_info *d3d_info )
+{
+    /* If HW clipping is used, no clipplane emulation */
+    if (!(gl_info->quirks & WINED3D_CX_QUIRK_GLSL_CLIP_BROKEN)) return 0;
+    /* If clipping is disabled, no clipplanes are needed */
+    if (!state->render_states[WINED3D_RS_CLIPPING]) return 0;
+    /* With pixelshaders, emulate all enabled clipplanes(disabled per shader
+     * if no free texcoord is found. */
+    if (use_ps(state)) return state->render_states[WINED3D_RS_CLIPPLANEENABLE];
+    /* With FFP, if all texcoords are used, don't emulate clipplanes */
+    if (context->lowest_disabled_stage >= d3d_info->limits.ffp_blend_stages) return 0;
+    /* Otherwise(FFP with highest texcoord free) emulate all enabled planes */
+    return state->render_states[WINED3D_RS_CLIPPLANEENABLE];
+}
+
 static void add_glsl_program_entry(struct shader_glsl_priv *priv, struct glsl_shader_prog_link *entry)
 {
     struct glsl_program_key key;
@@ -4175,6 +4201,7 @@ static void add_glsl_program_entry(struct shader_glsl_priv *priv, struct glsl_sh
     key.vs_id = entry->vs.id;
     key.gs_id = entry->gs.id;
     key.ps_id = entry->ps.id;
+    key.clipplanes = entry->clipplanes;
 
     if (wine_rb_put(&priv->program_lookup, &key, &entry->program_lookup_entry) == -1)
     {
@@ -4183,7 +4210,11 @@ static void add_glsl_program_entry(struct shader_glsl_priv *priv, struct glsl_sh
 }
 
 static struct glsl_shader_prog_link *get_glsl_program_entry(const struct shader_glsl_priv *priv,
-        GLhandleARB vs_id, GLhandleARB gs_id, GLhandleARB ps_id)
+                                                            GLhandleARB vs_id, GLhandleARB gs_id, GLhandleARB ps_id,
+                                                            const struct wined3d_context *context,
+                                                            const struct wined3d_state *state,
+                                                            const struct wined3d_gl_info *gl_info,
+                                                            const struct wined3d_d3d_info *d3d_info )
 {
     struct wine_rb_entry *entry;
     struct glsl_program_key key;
@@ -4191,6 +4222,7 @@ static struct glsl_shader_prog_link *get_glsl_program_entry(const struct shader_
     key.vs_id = vs_id;
     key.gs_id = gs_id;
     key.ps_id = ps_id;
+    key.clipplanes = find_clipplanes(context, state, gl_info, d3d_info);
 
     entry = wine_rb_get(&priv->program_lookup, &key);
     return entry ? WINE_RB_ENTRY_VALUE(entry, struct glsl_shader_prog_link, program_lookup_entry) : NULL;
@@ -4205,6 +4237,7 @@ static void delete_glsl_program_entry(struct shader_glsl_priv *priv, const struc
     key.vs_id = entry->vs.id;
     key.gs_id = entry->gs.id;
     key.ps_id = entry->ps.id;
+    key.clipplanes = entry->clipplanes;
     wine_rb_remove(&priv->program_lookup, &key);
 
     GL_EXTCALL(glDeleteObjectARB(entry->programId));
@@ -4312,10 +4345,60 @@ static void handle_ps3_input(struct wined3d_shader_buffer *buffer,
     HeapFree(GetProcessHeap(), 0, set);
 }
 
+static void glsl_gen_clipplane_emul(const struct wined3d_shader *ps, struct wined3d_shader_buffer *buffer,
+        const struct wined3d_gl_info *gl_info, const struct wined3d_d3d_info *d3d_info,
+        DWORD enabled_clipplanes)
+{
+    DWORD clip_coord = 0;
+
+    /* Generate a clipplane emulation texcoord if native clipplanes are broken */
+    if(ps)
+    {
+        struct glsl_shader_private *shader_priv = ps->backend_data;
+        clip_coord = shader_priv->clipplane_emulation;
+    }
+    else if (gl_info->quirks & WINED3D_CX_QUIRK_GLSL_CLIP_BROKEN)
+    {
+        clip_coord = d3d_info->limits.ffp_blend_stages;
+    }
+
+    if(clip_coord)
+    {
+        unsigned int i, coord = 0;
+        char component;
+
+        shader_addline(buffer, "gl_TexCoord[%u] = vec4(1.0);\n", clip_coord - 1);
+        if(enabled_clipplanes)
+        {
+            shader_addline(buffer, "vec4 ClipCoord = gl_Position;\n");
+            shader_addline(buffer, "ClipCoord.xy += posFixup.zw * ClipCoord.ww;\n");
+            for(i = 0; i < gl_info->limits.clipplanes; i++)
+            {
+                if(enabled_clipplanes & (1 << i))
+                {
+                    if(coord == 0) component = 'x';
+                    else if(coord == 1) component = 'y';
+                    else if(coord == 2) component = 'z';
+                    else if(coord == 3) component = 'w';
+                    else
+                    {
+                        FIXME("Too many clipplanes used for clipplane emulation\n");
+                        break;
+                    }
+                    shader_addline(buffer, "gl_TexCoord[%u].%c = dot(ClipCoord, gl_ClipPlane[%u]);\n", clip_coord - 1,
+                                   component, i);
+                    coord++;
+                }
+            }
+        }
+    }
+}
+
 /* Context activation is done by the caller. */
 static GLhandleARB generate_param_reorder_function(struct wined3d_shader_buffer *buffer,
         const struct wined3d_shader *vs, const struct wined3d_shader *ps,
-        const struct wined3d_gl_info *gl_info)
+        const struct wined3d_gl_info *gl_info, const struct wined3d_d3d_info *d3d_info, 
+        DWORD enabled_clipplanes)
 {
     GLhandleARB ret = 0;
     DWORD ps_major = ps ? ps->reg_maps.shader_version.major : 0;
@@ -4332,6 +4415,7 @@ static GLhandleARB generate_param_reorder_function(struct wined3d_shader_buffer 
 
     if (ps_major < 3)
     {
+        if(enabled_clipplanes) shader_addline(buffer, "uniform vec4 posFixup;\n");
         shader_addline(buffer, "void order_ps_input(in vec4 vs_out[%u])\n{\n", vs->limits.packed_output);
 
         for (i = 0; map; map >>= 1, ++i)
@@ -4381,6 +4465,7 @@ static GLhandleARB generate_param_reorder_function(struct wined3d_shader_buffer 
                 shader_addline(buffer, "gl_FogFragCoord = clamp(vs_out[%u].%c, 0.0, 1.0);\n", i, reg_mask[1]);
             }
         }
+        glsl_gen_clipplane_emul(ps, buffer, gl_info, d3d_info, enabled_clipplanes);
         shader_addline(buffer, "}\n");
     }
     else
@@ -4388,6 +4473,7 @@ static GLhandleARB generate_param_reorder_function(struct wined3d_shader_buffer 
         UINT in_count = min(vec4_varyings(ps_major, gl_info), ps->limits.packed_input);
         /* This one is tricky: a 3.0 pixel shader reads from a 3.0 vertex shader */
         shader_addline(buffer, "varying vec4 ps_in[%u];\n", in_count);
+        if(enabled_clipplanes) shader_addline(buffer, "uniform vec4 posFixup;\n");
         shader_addline(buffer, "void order_ps_input(in vec4 vs_out[%u])\n{\n", vs->limits.packed_output);
 
         /* First, sort out position and point size. Those are not passed to the pixel shader */
@@ -4413,6 +4499,7 @@ static GLhandleARB generate_param_reorder_function(struct wined3d_shader_buffer 
         handle_ps3_input(buffer, gl_info, ps->u.ps.input_reg_map, ps->input_signature,
                 &ps->reg_maps, output_signature, &vs->reg_maps);
 
+        glsl_gen_clipplane_emul(ps, buffer, gl_info, d3d_info, enabled_clipplanes);
         shader_addline(buffer, "}\n");
     }
 
@@ -4471,6 +4558,8 @@ static GLuint shader_glsl_generate_pshader(const struct wined3d_context *context
     const struct wined3d_gl_info *gl_info = context->gl_info;
     const DWORD *function = shader->function;
     struct shader_glsl_ctx_priv priv_ctx;
+    BOOL varying_limit_ok = TRUE;
+    struct glsl_shader_private *shader_priv = shader->backend_data;
 
     /* Create the hw GLSL shader object and assign it as the shader->prgId */
     GLhandleARB shader_obj = GL_EXTCALL(glCreateShaderObjectARB(GL_FRAGMENT_SHADER_ARB));
@@ -4501,6 +4590,11 @@ static GLuint shader_glsl_generate_pshader(const struct wined3d_context *context
     if (reg_maps->shader_version.major >= 3 && args->vp_mode != vertexshader)
         shader_glsl_input_pack(shader, buffer, shader->input_signature, reg_maps, args->vp_mode);
 
+    if(shader_priv->clipplane_emulation && args->clip)
+    {
+        shader_addline(buffer, "if(any(lessThan(gl_TexCoord[%u], vec4(0.0)))) discard;\n", shader_priv->clipplane_emulation - 1);
+    }
+
     /* Base Shader Body */
     shader_generate_main(shader, buffer, reg_maps, function, &priv_ctx);
 
@@ -4514,8 +4608,23 @@ static GLuint shader_glsl_generate_pshader(const struct wined3d_context *context
     if (args->srgb_correction)
         shader_glsl_generate_srgb_write_correction(buffer);
 
+    if (gl_info->quirks & WINED3D_CX_QUIRK_TEXCOORD_FOG)
+    {
+        unsigned int cnt = 0, i;
+        for(i = 0; i < MAX_REG_TEXCRD; i++)
+        {
+            if (reg_maps->texcoord & (1 << i)) ++cnt;
+        }
+        if(shader_priv->clipplane_emulation) cnt++;
+        if(cnt >= 8)
+        {
+            WARN("Disabling fog because 8 texcoords are used\n");
+            varying_limit_ok = FALSE;
+        }
+    }
+
     /* SM < 3 does not replace the fog stage. */
-    if (reg_maps->shader_version.major < 3)
+    if (reg_maps->shader_version.major < 3 && varying_limit_ok)
         shader_glsl_generate_fog_code(buffer, args->fog);
 
     shader_addline(buffer, "}\n");
@@ -4572,7 +4681,7 @@ static GLuint shader_glsl_generate_vshader(const struct wined3d_context *context
         shader_addline(buffer, "gl_FogFragCoord = 0.0;\n");
 
     /* We always store the clipplanes without y inversion */
-    if (args->clip_enabled)
+    if (args->clip_enabled && !(gl_info->quirks & WINED3D_CX_QUIRK_GLSL_CLIP_BROKEN))
         shader_addline(buffer, "gl_ClipVertex = gl_Position;\n");
 
     /* Write the final position.
@@ -4648,11 +4757,20 @@ static GLhandleARB find_glsl_pshader(const struct wined3d_context *context,
 
     if (!shader->backend_data)
     {
+        const struct wined3d_gl_info *gl_info = &shader->device->adapter->gl_info;
         shader->backend_data = HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, sizeof(*shader_data));
         if (!shader->backend_data)
         {
             ERR("Failed to allocate backend data.\n");
             return 0;
+        }
+
+        if (gl_info->quirks & WINED3D_CX_QUIRK_GLSL_CLIP_BROKEN)
+        {
+            unsigned int coord;
+            coord = shader_find_free_input_register(&shader->reg_maps, context->d3d_info->limits.ffp_blend_stages - 1);
+            /* Store off by one, the code checks against zero */
+            ((struct glsl_shader_private *)shader->backend_data)->clipplane_emulation = coord + 1;
         }
     }
     shader_data = shader->backend_data;
@@ -5787,6 +5905,7 @@ static void set_glsl_shader_program(const struct wined3d_context *context, const
         struct shader_glsl_priv *priv, struct glsl_context_data *ctx_data)
 {
     const struct wined3d_gl_info *gl_info = context->gl_info;
+    const struct wined3d_d3d_info *d3d_info = context->d3d_info;
     const struct ps_np2fixup_info *np2fixup_info = NULL;
     struct glsl_shader_prog_link *entry = NULL;
     struct wined3d_shader *vshader = NULL;
@@ -5799,6 +5918,7 @@ static void set_glsl_shader_program(const struct wined3d_context *context, const
     GLhandleARB gs_id = 0;
     GLhandleARB ps_id = 0;
     struct list *ps_list, *vs_list;
+    WORD old_fpu_cw;
 
     if (!(context->shader_update_mask & (1 << WINED3D_SHADER_TYPE_VERTEX)))
     {
@@ -5868,7 +5988,8 @@ static void set_glsl_shader_program(const struct wined3d_context *context, const
         ps_list = &ffp_shader->linked_programs;
     }
 
-    if ((!vs_id && !gs_id && !ps_id) || (entry = get_glsl_program_entry(priv, vs_id, gs_id, ps_id)))
+    if ((!vs_id && !gs_id && !ps_id) || (entry = get_glsl_program_entry(priv, vs_id, gs_id, ps_id,
+                                                                        context, state, gl_info, d3d_info)))
     {
         ctx_data->glsl_program = entry;
         return;
@@ -5886,6 +6007,7 @@ static void set_glsl_shader_program(const struct wined3d_context *context, const
     entry->ps.id = ps_id;
     entry->constant_version = 0;
     entry->ps.np2_fixup_info = np2fixup_info;
+    entry->clipplanes = find_clipplanes(context, state, gl_info, d3d_info);
     /* Add the hash table entry */
     add_glsl_program_entry(priv, entry);
 
@@ -5906,8 +6028,10 @@ static void set_glsl_shader_program(const struct wined3d_context *context, const
     {
         WORD map = vshader->reg_maps.input_registers;
         char tmp_name[10];
+        DWORD clip = find_clipplanes(context, state, gl_info, d3d_info);
 
-        reorder_shader_id = generate_param_reorder_function(&priv->shader_buffer, vshader, pshader, gl_info);
+        reorder_shader_id = generate_param_reorder_function(&priv->shader_buffer, vshader, pshader,
+                gl_info, d3d_info, clip);
         TRACE("Attaching GLSL shader object %u to program %u\n", reorder_shader_id, programId);
         GL_EXTCALL(glAttachObjectARB(programId, reorder_shader_id));
         checkGLcall("glAttachObjectARB");
@@ -5968,7 +6092,16 @@ static void set_glsl_shader_program(const struct wined3d_context *context, const
 
     /* Link the program */
     TRACE("Linking GLSL shader program %u\n", programId);
+
+    old_fpu_cw = wined3d_get_fpu_cw();
+    if (old_fpu_cw != WINED3D_DEFAULT_FPU_CW)
+        wined3d_set_fpu_cw(WINED3D_DEFAULT_FPU_CW);
+
     GL_EXTCALL(glLinkProgramARB(programId));
+
+    if (old_fpu_cw != WINED3D_DEFAULT_FPU_CW)
+        wined3d_set_fpu_cw(old_fpu_cw);
+
     shader_glsl_validate_link(gl_info, programId);
 
     shader_glsl_init_vs_uniform_locations(gl_info, programId, &entry->vs,
@@ -6439,6 +6572,9 @@ static int glsl_program_key_compare(const void *key, const struct wine_rb_entry 
     if (k->ps_id > prog->ps.id) return 1;
     else if (k->ps_id < prog->ps.id) return -1;
 
+    if(k->clipplanes > prog->clipplanes) return 1;
+    else if(k->clipplanes < prog->clipplanes) return -1;
+
     return 0;
 }
 
@@ -6623,6 +6759,13 @@ static void shader_glsl_get_caps(const struct wined3d_gl_info *gl_info, struct s
     caps->vs_uniform_count = gl_info->limits.glsl_vs_float_constants;
     caps->ps_uniform_count = gl_info->limits.glsl_ps_float_constants;
 
+    if (cxgames_hacks.safe_vs_consts)
+    {
+        /* One for the posFixup, two for compiler constants, and the clipplanes. */
+        caps->vs_uniform_count -= 3 + gl_info->limits.clipplanes;
+        caps->vs_uniform_count -= gl_info->reserved_glsl_constants;
+    }
+
     /* FIXME: The following line is card dependent. -8.0 to 8.0 is the
      * Direct3D minimum requirement.
      *
@@ -6645,6 +6788,21 @@ static void shader_glsl_get_caps(const struct wined3d_gl_info *gl_info, struct s
      * shader_glsl_alloc(). */
     caps->wined3d_caps = WINED3D_SHADER_CAP_VS_CLIPPING
             | WINED3D_SHADER_CAP_SRGB_WRITE;
+
+    /* Do not advertise VS clipping if the no vs clipping quirk is set. On a
+     * proper GL driver this should not matter, but on a proper GL driver we
+     * don't need the quirk in the first place.
+     *
+     * ATI cards on OSX clip based on gl_Position if a clipplane is enabled.
+     * This would be almost perfect for our use, except that the Z fixup
+     * makes the clip position invalid. Don't try to make use of this bug
+     * though by disabling the Z fixup, I consider it a bad idea to depend on
+     * a bug, and disabling the Z fixup will break geometry position vs depth
+     * clear position, and it will reduce the Z buffer precision.
+     *
+     * Tracked by crossover hacks bug 5366. */
+    if (gl_info->quirks & WINED3D_CX_QUIRK_GLSL_CLIP_BROKEN)
+        caps->wined3d_caps &= ~WINED3D_SHADER_CAP_VS_CLIPPING;
 }
 
 static BOOL shader_glsl_color_fixup_supported(struct color_fixup_desc fixup)

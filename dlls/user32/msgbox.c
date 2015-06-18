@@ -19,6 +19,7 @@
  * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301, USA
  */
 
+#include <stdlib.h>
 #include <stdarg.h>
 #include <string.h>
 
@@ -378,6 +379,11 @@ static INT_PTR CALLBACK MSGBOX_DlgProc( HWND hwnd, UINT message,
  */
 INT WINAPI MessageBoxA(HWND hWnd, LPCSTR text, LPCSTR title, UINT type)
 {
+    if (getenv("CX_HACK_SIEBELMSJVM"))
+    {
+        if (!hWnd && !strncmp("This application or DLL can not be loaded", text, 41))
+            return MB_OK;
+    }
     return MessageBoxExA(hWnd, text, title, type, LANG_NEUTRAL);
 }
 

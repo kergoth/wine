@@ -273,6 +273,7 @@ HANDLE thread_init(void)
     teb->Tib.StackBase = (void *)~0UL;
     teb->StaticUnicodeString.Buffer = teb->StaticUnicodeBuffer;
     teb->StaticUnicodeString.MaximumLength = sizeof(teb->StaticUnicodeBuffer);
+    teb->ThreadLocalStoragePointer = teb->TlsSlots;
 
     thread_data = (struct ntdll_thread_data *)teb->SpareBytes1;
     thread_data->request_fd = -1;
@@ -508,6 +509,7 @@ NTSTATUS WINAPI RtlCreateUserThread( HANDLE process, const SECURITY_DESCRIPTOR *
     teb->ClientId.UniqueThread  = ULongToHandle(tid);
     teb->StaticUnicodeString.Buffer        = teb->StaticUnicodeBuffer;
     teb->StaticUnicodeString.MaximumLength = sizeof(teb->StaticUnicodeBuffer);
+    teb->ThreadLocalStoragePointer = teb->TlsSlots;
 
     /* create default activation context frame for new thread */
     RtlGetActiveActivationContext(&actctx);
@@ -900,7 +902,7 @@ NTSTATUS WINAPI NtQueryInformationThread( HANDLE handle, THREADINFOCLASS class,
     case ThreadBasicInformation:
         {
             THREAD_BASIC_INFORMATION info;
-            const ULONG_PTR affinity_mask = ((ULONG_PTR)1 << NtCurrentTeb()->Peb->NumberOfProcessors) - 1;
+            const ULONG_PTR affinity_mask = get_system_affinity_mask();
 
             SERVER_START_REQ( get_thread_info )
             {
@@ -927,7 +929,7 @@ NTSTATUS WINAPI NtQueryInformationThread( HANDLE handle, THREADINFOCLASS class,
         return status;
     case ThreadAffinityMask:
         {
-            const ULONG_PTR affinity_mask = ((ULONG_PTR)1 << NtCurrentTeb()->Peb->NumberOfProcessors) - 1;
+            const ULONG_PTR affinity_mask = get_system_affinity_mask();
             ULONG_PTR affinity = 0;
 
             SERVER_START_REQ( get_thread_info )
@@ -1170,7 +1172,7 @@ NTSTATUS WINAPI NtSetInformationThread( HANDLE handle, THREADINFOCLASS class,
         return status;
     case ThreadAffinityMask:
         {
-            const ULONG_PTR affinity_mask = ((ULONG_PTR)1 << NtCurrentTeb()->Peb->NumberOfProcessors) - 1;
+            const ULONG_PTR affinity_mask = get_system_affinity_mask();
             ULONG_PTR req_aff;
 
             if (length != sizeof(ULONG_PTR)) return STATUS_INVALID_PARAMETER;

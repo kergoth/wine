@@ -944,8 +944,46 @@ static void set_app_icon(void)
     CFArrayRef images = create_app_icon_images();
     if (images)
     {
-        macdrv_set_application_icon(images);
+        macdrv_set_application_icon(images, NULL);
         CFRelease(images);
+    }
+    else
+    {
+        const char *cx_root;
+        if ((cx_root = getenv("CX_ROOT")) && cx_root[0])
+        {
+            CFURLRef url, temp;
+            url = CFURLCreateFromFileSystemRepresentation(NULL, (UInt8*)cx_root, strlen(cx_root), TRUE);
+            if (url)
+            {
+                temp = CFURLCreateCopyDeletingLastPathComponent(NULL, url);
+                CFRelease(url);
+                url = temp;
+            }
+            if (url)
+            {
+                temp = CFURLCreateCopyDeletingLastPathComponent(NULL, url);
+                CFRelease(url);
+                url = temp;
+            }
+            if (url)
+            {
+                temp = CFURLCreateCopyAppendingPathComponent(NULL, url, CFSTR("Resources"), TRUE);
+                CFRelease(url);
+                url = temp;
+            }
+            if (url)
+            {
+                temp = CFURLCreateCopyAppendingPathComponent(NULL, url, CFSTR("exeIcon.icns"), FALSE);
+                CFRelease(url);
+                url = temp;
+            }
+            if (url)
+            {
+                macdrv_set_application_icon(NULL, url);
+                CFRelease(url);
+            }
+        }
     }
 }
 

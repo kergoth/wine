@@ -107,7 +107,8 @@ static int open_http_url( const WCHAR *url )
         { '/', 'u', 's', 'r', '/', 'b', 'i', 'n', '/', 'o', 'p', 'e', 'n', 0 };
 #else
     static const WCHAR defaultbrowsers[] =
-        {'x','d','g','-','o','p','e','n',',','f','i','r','e','f','o','x',',',
+        {'l','a','u','n','c','h','u','r','l',',',
+         'x','d','g','-','o','p','e','n',',','f','i','r','e','f','o','x',',',
          'k','o','n','q','u','e','r','o','r',',','m','o','z','i','l','l','a',',',
          'n','e','t','s','c','a','p','e',',','g','a','l','e','o','n',',',
          'o','p','e','r','a',',','d','i','l','l','o',0};

@@ -3467,6 +3467,12 @@ LRESULT WINAPI SendMessageA( HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam )
     DWORD_PTR res = 0;
     struct send_message_info info;
 
+    /*------------------------------------------------------------------------
+    ** Hack for Shockwave.
+    **----------------------------------------------------------------------*/
+    if (msg == 0x9e0)
+        usleep(0);
+
     info.type    = MSG_ASCII;
     info.hwnd    = hwnd;
     info.msg     = msg;

@@ -26,6 +26,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
+#include <unistd.h>
 
 #include "ntstatus.h"
 #define WIN32_NO_STATUS
@@ -82,6 +83,18 @@ PEB * WINAPI RtlGetCurrentPeb(void)
 HANDLE CDECL __wine_make_process_system(void)
 {
     HANDLE ret = 0;
+
+    /*  CodeWeavers-specific hack:  We need to exclude ourselves
+        from the winewrapper's wait-children process.  So we'll
+        close the wait-children pipe if it is defined.  */
+    const char *child_pipe = getenv("WINE_WAIT_CHILD_PIPE");
+    if (child_pipe)
+    {
+        int fd = atoi(child_pipe);
+        if (fd) close( fd );
+        unsetenv("WINE_WAIT_CHILD_PIPE");
+    }
+
     SERVER_START_REQ( make_process_system )
     {
         if (!wine_server_call( req )) ret = wine_server_ptr_handle( reply->event );
@@ -97,6 +110,13 @@ static UINT process_error_mode;
         FIXME("(process=%p) Unimplemented information class: " #c "\n", ProcessHandle); \
         ret = STATUS_INVALID_INFO_CLASS; \
         break
+
+ULONG_PTR get_system_affinity_mask(void)
+{
+    ULONG num_cpus = NtCurrentTeb()->Peb->NumberOfProcessors;
+    if (num_cpus >= sizeof(ULONG_PTR) * 8) return ~(ULONG_PTR)0;
+    return ((ULONG_PTR)1 << num_cpus) - 1;
+}
 
 /******************************************************************************
 *  NtQueryInformationProcess		[NTDLL.@]
@@ -145,7 +165,7 @@ NTSTATUS WINAPI NtQueryInformationProcess(
     case ProcessBasicInformation:
         {
             PROCESS_BASIC_INFORMATION pbi;
-            const ULONG_PTR affinity_mask = ((ULONG_PTR)1 << NtCurrentTeb()->Peb->NumberOfProcessors) - 1;
+            const ULONG_PTR affinity_mask = get_system_affinity_mask();
 
             if (ProcessInformationLength >= sizeof(PROCESS_BASIC_INFORMATION))
             {
@@ -230,6 +250,12 @@ NTSTATUS WINAPI NtQueryInformationProcess(
                 {
                     /* FIXME : real data */
                     memset(&pvmi, 0 , sizeof(VM_COUNTERS));
+                    #define ONEGIG (1024 * 1024 * 1024);
+                    pvmi.QuotaPeakPagedPoolUsage = ONEGIG;
+                    pvmi.QuotaPagedPoolUsage = ONEGIG;
+                    pvmi.QuotaPeakNonPagedPoolUsage = ONEGIG;
+                    pvmi.QuotaNonPagedPoolUsage = ONEGIG;
+                    #undef ONEGIG
 
                     len = ProcessInformationLength;
                     if (len != FIELD_OFFSET(VM_COUNTERS,PrivatePageCount)) len = sizeof(VM_COUNTERS);
@@ -389,7 +415,7 @@ NTSTATUS WINAPI NtQueryInformationProcess(
         len = sizeof(ULONG_PTR);
         if (ProcessInformationLength == len)
         {
-            const ULONG_PTR system_mask = ((ULONG_PTR)1 << NtCurrentTeb()->Peb->NumberOfProcessors) - 1;
+            const ULONG_PTR system_mask = get_system_affinity_mask();
 
             SERVER_START_REQ(get_process_info)
             {
@@ -485,8 +511,11 @@ NTSTATUS WINAPI NtSetInformationProcess(
         process_error_mode = *(UINT *)ProcessInformation;
         break;
     case ProcessAffinityMask:
+    {
+        const ULONG_PTR system_mask = get_system_affinity_mask();
+
         if (ProcessInformationLength != sizeof(DWORD_PTR)) return STATUS_INVALID_PARAMETER;
-        if (*(PDWORD_PTR)ProcessInformation & ~(((DWORD_PTR)1 << NtCurrentTeb()->Peb->NumberOfProcessors) - 1))
+        if (*(PDWORD_PTR)ProcessInformation & ~system_mask)
             return STATUS_INVALID_PARAMETER;
         if (!*(PDWORD_PTR)ProcessInformation)
             return STATUS_INVALID_PARAMETER;
@@ -499,6 +528,7 @@ NTSTATUS WINAPI NtSetInformationProcess(
         }
         SERVER_END_REQ;
         break;
+    }
     case ProcessPriorityClass:
         if (ProcessInformationLength != sizeof(PROCESS_PRIORITY_CLASS))
             return STATUS_INVALID_PARAMETER;

@@ -42,12 +42,17 @@ extern BOOL allow_software_rendering DECLSPEC_HIDDEN;
 extern BOOL disable_window_decorations DECLSPEC_HIDDEN;
 extern HMODULE macdrv_module DECLSPEC_HIDDEN;
 
+/* CrossOver Hack 11692: Unique device names from GetMonitorInfo */
+extern BOOL unique_monitor_names DECLSPEC_HIDDEN;
+
 
 extern const char* debugstr_cf(CFTypeRef t) DECLSPEC_HIDDEN;
 
 static inline CGRect cgrect_from_rect(RECT rect)
 {
-    return CGRectMake(rect.left, rect.top, max(0, rect.right - rect.left), max(0, rect.bottom - rect.top));
+    if (rect.left >= rect.right || rect.top >= rect.bottom)
+        return CGRectMake(rect.left, rect.top, 0, 0);
+    return CGRectMake(rect.left, rect.top, rect.right - rect.left, rect.bottom - rect.top);
 }
 
 static inline RECT rect_from_cgrect(CGRect cgrect)
@@ -184,6 +189,8 @@ extern void macdrv_release_capture(HWND hwnd, const macdrv_event *event) DECLSPE
 extern void CDECL macdrv_SetCapture(HWND hwnd, UINT flags) DECLSPEC_HIDDEN;
 
 extern void macdrv_compute_keyboard_layout(struct macdrv_thread_data *thread_data) DECLSPEC_HIDDEN;
+/* CrossOver Hack 10912: Mac Edit menu */
+extern void macdrv_edit_menu_command(const macdrv_event *event) DECLSPEC_HIDDEN;
 extern void macdrv_keyboard_changed(const macdrv_event *event) DECLSPEC_HIDDEN;
 extern void macdrv_key_event(HWND hwnd, const macdrv_event *event) DECLSPEC_HIDDEN;
 extern void macdrv_hotkey_press(const macdrv_event *event) DECLSPEC_HIDDEN;
