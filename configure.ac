@@ -1382,8 +1382,8 @@ dnl **** Check for FreeType 2 ****
 if test "x$with_freetype" != "xno"
 then
     WINE_PACKAGE_FLAGS(FREETYPE,[freetype2],[-lfreetype],
-                       [`(freetype-config --cflags || freetype2-config --cflags) 2>/dev/null`],
-                       [`(freetype-config --libs || freetype2-config --libs) 2>/dev/null`],
+                       [`(pkg-config --cflags freetype2 || freetype-config --cflags || freetype2-config --cflags) 2>/dev/null`],
+                       [`(pkg-config --libs freetype2 || freetype-config --libs || freetype2-config --libs) 2>/dev/null`],
         [AC_CHECK_HEADERS([ft2build.h])
         if test "$ac_cv_header_ft2build_h" = "yes"
         then
