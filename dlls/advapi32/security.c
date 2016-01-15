@@ -2389,9 +2389,53 @@ SetFileSecurityW( LPCWSTR lpFileName,
     HANDLE file;
     DWORD access = 0, err;
     NTSTATUS status;
+    static int is_office = 2;
 
     TRACE("(%s, 0x%x, %p)\n", debugstr_w(lpFileName), RequestedInformation,
           pSecurityDescriptor );
+
+    /* CX HACK 10834 -- msoffice sets FILE_EXECUTE on files it saves and Wine
+     * maps that to the x permission on files. Some Linux file managers decide
+     * to try to execute the file instead of opening it with the assigned
+     * application. So, skip setting that bit for msoffice programs. */
+    if(is_office == 2){
+        char name[MAX_PATH], *p;
+        GetModuleFileNameA(GetModuleHandleA(NULL), name, sizeof(name));
+        p = strrchr(name, '\\');
+        if(p)
+            ++p;
+        else
+            p = name;
+        if(strcasecmp(p, "CLVIEW.EXE") == 0 ||
+                strcasecmp(p, "CNFNOT32.EXE") == 0 ||
+                strcasecmp(p, "DSSM.EXE") == 0 ||
+                strcasecmp(p, "excelcnv.exe") == 0 ||
+                strcasecmp(p, "EXCEL.EXE") == 0 ||
+                strcasecmp(p, "GRAPH.EXE") == 0 ||
+                strcasecmp(p, "MSOHTMED.EXE") == 0 ||
+                strcasecmp(p, "MSQRY32.EXE") == 0 ||
+                strcasecmp(p, "MSTORDB.EXE") == 0 ||
+                strcasecmp(p, "MSTORE.EXE") == 0 ||
+                strcasecmp(p, "OIS.EXE") == 0 ||
+                strcasecmp(p, "OUTLOOK.EXE") == 0 ||
+                strcasecmp(p, "POWERPNT.EXE") == 0 ||
+                strcasecmp(p, "PPTVIEW.EXE") == 0 ||
+                strcasecmp(p, "SCANOST.EXE") == 0 ||
+                strcasecmp(p, "SCANPST.EXE") == 0 ||
+                strcasecmp(p, "SELFCERT.EXE") == 0 ||
+                strcasecmp(p, "SETLANG.EXE") == 0 ||
+                strcasecmp(p, "VPREVIEW.EXE") == 0 ||
+                strcasecmp(p, "WINWORD.EXE") == 0 ||
+                strcasecmp(p, "Wordconv.exe") == 0)
+            is_office = 1;
+        else
+            is_office = 0;
+    }
+    if(is_office){
+        TRACE("CX HACK 10834: Skipping SetFileSecurity\n");
+        return TRUE;
+    }
+    /* End hack */
 
     if (RequestedInformation & OWNER_SECURITY_INFORMATION ||
         RequestedInformation & GROUP_SECURITY_INFORMATION)

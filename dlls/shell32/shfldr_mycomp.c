@@ -26,6 +26,7 @@
 #include <string.h>
 #include <stdarg.h>
 #include <stdio.h>
+#include <limits.h>
 
 #define COBJMACROS
 #define NONAMELESSUNION
@@ -705,6 +706,22 @@ static HRESULT WINAPI ISF_MyComputer_fnGetDisplayNameOf (IShellFolder2 *iface,
                            sizeof(wszDrive)/sizeof(wszDrive[0]) - 6,
                            &dwVolumeSerialNumber,
                            &dwMaximumComponetLength, &dwFileSystemFlags, NULL, 0);
+
+                /* Display unix path if volume has no label */
+                if (!wszDrive[0])
+                {
+                    char *unix_path = wine_get_unix_file_name(pszPath);
+                    if (unix_path)
+                    {
+                        char real_unix_path[PATH_MAX];
+                        realpath(unix_path, real_unix_path);
+                        HeapFree( GetProcessHeap(), 0, unix_path );
+                        MultiByteToWideChar(CP_UNIXCP, 0, real_unix_path, -1,
+                                            wszDrive, sizeof(wszDrive)/sizeof(wszDrive[0]));
+                        wszDrive[sizeof(wszDrive)/sizeof(wszDrive[0])-1] = '\0';
+                    }
+                }
+
                 strcatW (wszDrive, wszOpenBracket);
                 lstrcpynW (wszDrive + strlenW(wszDrive), pszPath, 3);
                 strcatW (wszDrive, wszCloseBracket);

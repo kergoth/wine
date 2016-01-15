@@ -1339,7 +1339,7 @@ static void color_fill_test(void)
          * result on Wine.
          * {D3DFMT_YUY2,     "D3DFMT_YUY2",     BLOCKS,                              0},
          * {D3DFMT_UYVY,     "D3DFMT_UYVY",     BLOCKS,                              0}, */
-        {D3DFMT_DXT1,     "D3DFMT_DXT1",     BLOCKS | TODO_FILL_RETURN,           0},
+        {D3DFMT_DXT1,     "D3DFMT_DXT1",     BLOCKS,                              0},
         /* Vendor-specific formats like ATI2N are a non-issue here since they're not
          * supported as offscreen plain surfaces and do not support D3DUSAGE_RENDERTARGET
          * when created as texture. */
@@ -17630,7 +17630,7 @@ static void add_dirty_rect_test(void)
     fill_surface(surface_managed, 0x0000ff00, D3DLOCK_NO_DIRTY_UPDATE);
     add_dirty_rect_test_draw(device);
     color = getPixelColor(device, 320, 240);
-    ok(color_match(color, 0x00ff0000, 1),
+    todo_wine ok(color_match(color, 0x00ff0000, 1),
             "Expected color 0x00ff0000, got 0x%08x.\n", color);
     hr = IDirect3DDevice9_Present(device, NULL, NULL, NULL, NULL);
     ok(SUCCEEDED(hr), "Failed to present, hr %#x.\n", hr);
@@ -20040,7 +20040,7 @@ static void test_depthbias(void)
         hr = IDirect3DDevice9_SetDepthStencilSurface(device, ds);
         ok(SUCCEEDED(hr), "Failed to set depth stencil surface, hr %#x.\n", hr);
         hr = IDirect3DDevice9_Clear(device, 0, NULL, D3DCLEAR_TARGET | D3DCLEAR_ZBUFFER, 0x00000000, 0.5f, 0);
-        ok(SUCCEEDED(hr), "Failed to clear %08x\n", hr);
+        ok(SUCCEEDED(hr), "Failed to clear, hr %#x.\n", hr);
 
         hr = IDirect3DDevice9_BeginScene(device);
         ok(SUCCEEDED(hr), "Failed to begin scene, hr %#x.\n", hr);

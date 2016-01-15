@@ -34,6 +34,12 @@
 #include <string.h>
 #include <sys/types.h>
 #include <limits.h>
+#ifdef HAVE_SYS_MMAN_H
+# include <sys/mman.h>
+#endif
+#ifdef HAVE_SYS_STAT_H
+# include <sys/stat.h>
+#endif
 #ifdef HAVE_SYS_IPC_H
 # include <sys/ipc.h>
 #endif
@@ -181,6 +187,7 @@
 
 WINE_DEFAULT_DEBUG_CHANNEL(winsock);
 WINE_DECLARE_DEBUG_CHANNEL(winediag);
+WINE_DECLARE_DEBUG_CHANNEL(oculus);
 
 /* names of the protocols */
 static const WCHAR NameIpxW[]   = {'I', 'P', 'X', '\0'};
@@ -3314,6 +3321,59 @@ static int do_connect(int fd, const struct WS_sockaddr* name, int namelen)
     return wsaErrno();
 }
 
+static void try_OVR_map(const char *shm_name)
+{
+#ifdef HAVE_SHM_OPEN
+    int fd, ret;
+    HANDLE handle, map;
+    const char *winname = shm_name + 1;
+
+    fd = shm_open(shm_name, O_RDWR, S_IRUSR | S_IWUSR);
+    if(fd < 0){
+        TRACE_(oculus)("No %s shm object\n", shm_name);
+        return;
+    }
+
+    wine_server_send_fd(fd);
+
+    SERVER_START_REQ(alloc_file_handle)
+    {
+        req->access     = GENERIC_READ | GENERIC_WRITE;
+        req->attributes = FILE_ATTRIBUTE_NORMAL;
+        req->fd         = fd;
+        if (!(ret = wine_server_call( req )))
+            handle = wine_server_ptr_handle( reply->handle );
+    }
+    SERVER_END_REQ;
+
+    if(!ret){
+        map = CreateFileMappingA(handle, NULL, PAGE_READWRITE, 0, 0, winname);
+        if(!map){
+            WARN_(oculus)("Couldn't create mapping \"%s\", skipping\n", winname);
+            CloseHandle(handle);
+        }
+    }else
+        WARN_(oculus)("Couldn't allocate file handle\n");
+
+    TRACE_(oculus)("Created map for shm object %s\n", shm_name);
+
+    /* let the handles leak, as we want the mapping to exist until the
+     * session quits */
+#endif
+}
+
+static void setup_oculus(void)
+{
+    /* The hard-coded names below are not strictly correct. We should get the
+     * file paths from `ovrd` using the Oculus SDK. See NetClient::Hmd_Create,
+     * which gives us a HMDNetworkInfo which contains the filenames.
+     *
+     * In practice, there will only ever be one ovrd running and one Rift
+     * connected, so this is good enough. */
+    try_OVR_map("/OVR_cam_0_0");
+    try_OVR_map("/OVR_hmd_0_0");
+}
+
 /***********************************************************************
  *		connect		(WS2_32.4)
  */
@@ -3321,7 +3381,20 @@ int WINAPI WS_connect(SOCKET s, const struct WS_sockaddr* name, int namelen)
 {
     int fd = get_sock_fd( s, FILE_READ_DATA, NULL );
 
+    static const IN6_ADDR ipv6_localhost = IN6ADDR_LOOPBACK_INIT;
+
     TRACE("socket %04lx, ptr %p %s, length %d\n", s, name, debugstr_sockaddr(name), namelen);
+
+#define OCULUS_VR_PORT 30322
+    if (name->sa_family == WS_AF_INET6 &&
+            !memcmp(((struct WS_sockaddr_in6 *)name)->sin6_addr.WS_s6_addr, ipv6_localhost.WS_s6_addr, sizeof(ipv6_localhost.WS_s6_addr)) &&
+            ntohs(((struct WS_sockaddr_in6 *)name)->sin6_port) == OCULUS_VR_PORT){
+        if (getenv("CX_DISABLE_OCULUS") == NULL){
+            TRACE_(oculus)("Client is connecting to Oculus port, setting up SHM maps\n");
+            setup_oculus();
+        }else
+            TRACE_(oculus)("Oculus support disabled in environment\n");
+    }
 
     if (fd != -1)
     {

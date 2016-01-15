@@ -2627,7 +2627,7 @@ void WINPOS_SysCommandSizeMove( HWND hwnd, WPARAM wParam )
     HDC hdc;
     HWND parent;
     LONG hittest = (LONG)(wParam & 0x0f);
-    WPARAM syscommand = wParam & 0xfff0;
+    WPARAM syscommand = wParam & 0xfff0,mmstate;
     HCURSOR hDragCursor = 0, hOldCursor = 0;
     POINT minTrack, maxTrack;
     POINT capturePoint, pt;
@@ -2900,4 +2900,15 @@ void WINPOS_SysCommandSizeMove( HWND hwnd, WPARAM wParam )
         }
         else WINPOS_ShowIconTitle( hwnd, TRUE );
     }
+
+    /* windows finishes this off with a WM_MOUSEMOVE with the current position
+       and buttons state. This message is relied on by some games. */
+    mmstate = 0;
+    if (GetAsyncKeyState(VK_LBUTTON)&0x1) mmstate &= MK_LBUTTON;
+    if (GetAsyncKeyState(VK_RBUTTON)&0x1) mmstate &= MK_RBUTTON;
+    if (GetAsyncKeyState(VK_MBUTTON)&0x1) mmstate &= MK_MBUTTON;
+    if (GetAsyncKeyState(VK_CONTROL)&0x1) mmstate &= MK_CONTROL;
+    if (GetAsyncKeyState(VK_SHIFT)&0x1) mmstate &= MK_SHIFT;
+
+    PostMessageW( hwnd, WM_MOUSEMOVE, mmstate, MAKELONG(pt.x,pt.y) );
 }

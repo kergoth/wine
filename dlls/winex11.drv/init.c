@@ -456,7 +456,7 @@ static struct opengl_funcs * X11DRV_wine_get_wgl_driver( PHYSDEV dev, UINT versi
 {
     struct opengl_funcs *ret;
 
-    if (!(ret = get_glx_driver( version )))
+    if (!(ret = get_wgl_driver( version )))
     {
         dev = GET_NEXT_PHYSDEV( dev, wine_get_wgl_driver );
         ret = dev->funcs->wine_get_wgl_driver( dev, version );

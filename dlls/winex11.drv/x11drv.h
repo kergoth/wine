@@ -219,7 +219,7 @@ extern BOOL client_side_with_render DECLSPEC_HIDDEN;
 extern BOOL shape_layered_windows DECLSPEC_HIDDEN;
 extern const struct gdi_dc_funcs *X11DRV_XRender_Init(void) DECLSPEC_HIDDEN;
 
-extern struct opengl_funcs *get_glx_driver(UINT) DECLSPEC_HIDDEN;
+extern struct opengl_funcs *get_wgl_driver(UINT) DECLSPEC_HIDDEN;
 
 /* IME support */
 extern void IME_SetOpenStatus(BOOL fOpen) DECLSPEC_HIDDEN;
@@ -378,8 +378,11 @@ extern BOOL private_color_map DECLSPEC_HIDDEN;
 extern int primary_monitor DECLSPEC_HIDDEN;
 extern int copy_default_colors DECLSPEC_HIDDEN;
 extern int alloc_system_colors DECLSPEC_HIDDEN;
+extern BOOL use_egl DECLSPEC_HIDDEN;
+
 extern int xrender_error_base DECLSPEC_HIDDEN;
 extern HMODULE x11drv_module DECLSPEC_HIDDEN;
+extern int forcealtrelease DECLSPEC_HIDDEN;
 
 /* atoms */
 
@@ -482,6 +485,8 @@ enum x11drv_atoms
     XATOM_text_rtf,
     XATOM_text_richtext,
     XATOM_text_uri_list,
+    XATOM__CX_WORKAREA, /* CodeWeavers Hack bug 5752 */
+    XATOM__CX_APPLEWM_TAG, /* CodeWeavers Hack bug 9517 */
     NB_XATOMS
 };
 
@@ -645,7 +650,7 @@ unsigned int X11DRV_Settings_GetModeCount(void) DECLSPEC_HIDDEN;
 void X11DRV_Settings_Init(void) DECLSPEC_HIDDEN;
 struct x11drv_mode_info *X11DRV_Settings_SetHandlers(const char *name,
                                                      int (*pNewGCM)(void),
-                                                     LONG (*pNewSCM)(int),
+                                                     LONG (*pNewSCM)(int, struct x11drv_mode_info *),
                                                      unsigned int nmodes,
                                                      int reserve_depths) DECLSPEC_HIDDEN;
 

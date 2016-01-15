@@ -21,6 +21,7 @@
 #include "config.h"
 
 #include <stdarg.h>
+#include <stdlib.h>
 
 #include "windef.h"
 #include "winbase.h"
@@ -1624,6 +1625,7 @@ LRESULT NC_HandleSysCommand( HWND hwnd, WPARAM wParam, LPARAM lParam )
         break;
 
     case SC_KEYMENU:
+        if (getenv("CX_MENU_SOCKET")) break;
         MENU_TrackKbdMenuBar( hwnd, wParam, (WCHAR)lParam );
         break;
 

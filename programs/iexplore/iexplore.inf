@@ -37,6 +37,8 @@ HKLM,"Software\Microsoft\Windows\CurrentVersion\App Paths\iexplore.exe","Path",,
 HKLM,"Software\Microsoft\Internet Explorer","Build",,"98112"
 HKLM,"Software\Microsoft\Internet Explorer","Version",,"9.0.8112.16421"
 HKLM,"Software\Microsoft\Internet Explorer","W2kVersion",,"9.0.8112.16421"
+HKLM,"Software\Microsoft\Windows\CurrentVersion\Uninstall\CXHTML","DisplayName",,"CrossOver HTML engine"
+HKLM,"Software\Microsoft\Windows\CurrentVersion\Uninstall\CXHTML","UninstallString",,"iexplore -unregserver"
 
 
 [Strings]

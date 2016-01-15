@@ -911,6 +911,21 @@ void LOCALE_InitRegistry(void)
 }
 
 
+/* CrossOver hack 10978 */
+static char* getlocale(int cat_num, const char* cat_name)
+{
+    char* locale = setlocale(cat_num, NULL);
+    if (!locale || !strcmp(locale, "C"))
+    {
+        char* env = getenv("LC_ALL");
+        if (!env) env = getenv(cat_name);
+        if (!env) env = getenv("LANG");
+        if (env) locale = env;
+    }
+    return locale;
+}
+
+
 /***********************************************************************
  *           setup_unix_locales
  */
@@ -921,7 +936,7 @@ static UINT setup_unix_locales(void)
     char *locale;
     UINT unix_cp = 0;
 
-    if ((locale = setlocale( LC_CTYPE, NULL )))
+    if ((locale = getlocale( LC_CTYPE, "LC_CTYPE" ))) /* CrossOver hack 10978 */
     {
         strcpynAtoW( ctype_buff, locale, sizeof(ctype_buff)/sizeof(WCHAR) );
         parse_locale_name( ctype_buff, &locale_name );
@@ -935,7 +950,7 @@ static UINT setup_unix_locales(void)
            locale_name.lcid, locale_name.matches, debugstr_a(locale) );
 
 #define GET_UNIX_LOCALE(cat) do \
-    if ((locale = setlocale( cat, NULL ))) \
+    if ((locale = getlocale( cat, #cat ))) /* CrossOver hack 10978 */ \
     { \
         strcpynAtoW( buffer, locale, sizeof(buffer)/sizeof(WCHAR) ); \
         if (!strcmpW( buffer, ctype_buff )) lcid_##cat = lcid_LC_CTYPE; \
@@ -2387,6 +2402,10 @@ INT WINAPI WideCharToMultiByte( UINT page, DWORD flags, LPCWSTR src, INT srclen,
                                     defchar, used ? &used_tmp : NULL );
             break;
         }
+#ifdef __APPLE__
+        /* CodeWeavers HACK */
+        flags |= WC_COMPOSITECHECK;
+#endif
         /* fall through */
     case CP_UTF8:
         if (defchar || used)

@@ -187,6 +187,8 @@ extern void macdrv_release_capture(HWND hwnd, const macdrv_event *event) DECLSPE
 extern void CDECL macdrv_SetCapture(HWND hwnd, UINT flags) DECLSPEC_HIDDEN;
 
 extern void macdrv_compute_keyboard_layout(struct macdrv_thread_data *thread_data) DECLSPEC_HIDDEN;
+/* CrossOver Hack 10912: Mac Edit menu */
+extern void macdrv_edit_menu_command(const macdrv_event *event) DECLSPEC_HIDDEN;
 extern void macdrv_keyboard_changed(const macdrv_event *event) DECLSPEC_HIDDEN;
 extern void macdrv_key_event(HWND hwnd, const macdrv_event *event) DECLSPEC_HIDDEN;
 extern void macdrv_hotkey_press(const macdrv_event *event) DECLSPEC_HIDDEN;
@@ -219,6 +221,8 @@ extern CFArrayRef create_app_icon_images(void) DECLSPEC_HIDDEN;
 extern void macdrv_status_item_mouse_button(const macdrv_event *event) DECLSPEC_HIDDEN;
 extern void macdrv_status_item_mouse_move(const macdrv_event *event) DECLSPEC_HIDDEN;
 
+/* CrossOver Hack: Retina support */
+extern void check_retina_status(void) DECLSPEC_HIDDEN;
 
 /**************************************************************************
  * Mac IME driver

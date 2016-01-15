@@ -72,6 +72,7 @@ static CRITICAL_SECTION wined3d_wndproc_cs = {&wined3d_wndproc_cs_debug, -1, 0, 
  * where appropriate. */
 struct wined3d_settings wined3d_settings =
 {
+    GLES_AUTO,      /* Try desktop GL first, fallback to ES by default. */
     MAKEDWORD_VERSION(1, 0), /* Default to legacy OpenGL */
     TRUE,           /* Use of GLSL enabled by default */
     ORM_FBO,        /* Use FBOs to do offscreen rendering */
@@ -86,6 +87,22 @@ struct wined3d_settings wined3d_settings =
     ~0U,            /* No GS shader model limit by default. */
     ~0U,            /* No PS shader model limit by default. */
     FALSE,          /* 3D support enabled by default. */
+    TRUE,           /* Use multithreaded CS by default. */
+    FALSE,          /* Do not ignore render target maps. */
+};
+
+/* CXGames hacks, not in the main wined3d configuration settings */
+struct cxgames_hacks cxgames_hacks =
+{
+    FALSE,                      /* enable_slow_blit */
+    0,                          /* max_vertex_blend_matrices */
+    FALSE,                      /* safe_vs_consts */
+    0,                          /* fixed_vs_constants_limit */
+    NULL,                       /* No extensions disabled by default */
+    FALSE,                      /* Use the absolute value of the POW arguments in ARB */
+    FALSE,                      /* INTZ not blacklisted by default */
+    WINED3D_MAPBUF_STATIC_NV,   /* Don't use glMapBuffer on dynamic buffers with NV threading */
+    FALSE,                      /* No SM4 with just GLSL 1.30 by default */
 };
 
 struct wined3d * CDECL wined3d_create(DWORD flags)
@@ -196,10 +213,35 @@ static BOOL wined3d_dll_init(HINSTANCE hInstDLL)
             if (RegOpenKeyA( tmpkey, appname, &appkey )) appkey = 0;
             RegCloseKey( tmpkey );
         }
+        if (!get_config_key(hkey, appkey, "CSMT", buffer, size)
+                && !strcmp(buffer,"disabled"))
+        {
+            TRACE("Disabling multithreaded command stream.\n");
+            wined3d_settings.cs_multithreaded = FALSE;
+        }
+        if (!get_config_key(hkey, appkey, "ignore_rt_map", buffer, size)
+                && !strcmp(buffer,"enabled"))
+        {
+            TRACE("Ignoring render target maps.\n");
+            wined3d_settings.ignore_rt_map = TRUE;
+        }
     }
 
     if (hkey || appkey)
     {
+        if ( !get_config_key( hkey, appkey, "UseGLES", buffer, size) )
+        {
+            if (!strcmp(buffer, "disabled"))
+            {
+                TRACE("Use of OpenGL ES disabled by registry.\n");
+                wined3d_settings.use_gles = GLES_DISABLED;
+            }
+            if (!strcmp(buffer, "enabled"))
+            {
+                TRACE("Use of OpenGL ES enabled by registry.\n");
+                wined3d_settings.use_gles = GLES_ENABLED;
+            }
+        }
         if (!get_config_key_dword(hkey, appkey, "MaxVersionGL", &tmpvalue))
         {
             if (tmpvalue != wined3d_settings.max_gl_version)
@@ -216,6 +258,27 @@ static BOOL wined3d_dll_init(HINSTANCE hInstDLL)
                 ERR_(winediag)("The GLSL shader backend has been disabled. You get to keep all the pieces if it breaks.\n");
                 TRACE("Use of GL Shading Language disabled\n");
                 wined3d_settings.glslRequested = FALSE;
+            }
+        }
+        if ( !get_config_key( hkey, appkey, "hl2_disable_glsl", buffer, size) )
+        {
+            /* This allows disabling GLSL for single HL2 mods(they all use hl2.exe).
+             * It is important that this key is evaluated *after* the UseGLS one,
+             * otherwise the useGLSL key may overwrite decisions made here
+             */
+            char *token;
+            LPSTR cmdline;
+            cmdline = GetCommandLineA();
+            TRACE("Checking command line for disabling GLSL per HL2 mod\n");
+            token = strtok(buffer, ";");
+            while(token) {
+                TRACE("Looking for \"%s\"\n", token);
+                if(strstr(cmdline, token)) {
+                    TRACE("Disabling GLSL for this HL2 mod\n");
+                    wined3d_settings.glslRequested = FALSE;
+                    break;
+                }
+                token = strtok(NULL, ";");
             }
         }
         if ( !get_config_key( hkey, appkey, "OffscreenRenderingMode", buffer, size) )
@@ -274,6 +337,14 @@ static BOOL wined3d_dll_init(HINSTANCE hInstDLL)
             else
                 ERR("VideoMemorySize is %i but must be >0\n", TmpVideoMemorySize);
         }
+        if ( !get_config_key( hkey, appkey, "enable_slow_blit", buffer, size) )
+        {
+            if (!strcmp(buffer,"enable"))
+            {
+                TRACE("Enabling slow pixel per pixel blits\n");
+                cxgames_hacks.enable_slow_blit = TRUE;
+            }
+        }
         if ( !get_config_key( hkey, appkey, "WineLogo", buffer, size) )
         {
             size_t len = strlen(buffer) + 1;
@@ -296,6 +367,31 @@ static BOOL wined3d_dll_init(HINSTANCE hInstDLL)
             TRACE("Enforcing strict draw ordering.\n");
             wined3d_settings.strict_draw_ordering = TRUE;
         }
+        if (!get_config_key_dword(hkey, appkey, "MaxVertexBlendMatrices", &tmpvalue))
+        {
+            TRACE("Using %u for MaxVertexBlendMatrices.\n", tmpvalue);
+            cxgames_hacks.max_vertex_blend_matrices = tmpvalue;
+        }
+        if ( !get_config_key( hkey, appkey, "SafeVsConsts", buffer, size) )
+        {
+            if (!strcmp(buffer,"enable"))
+            {
+                TRACE("Advertising only always available shader constants\n");
+                cxgames_hacks.safe_vs_consts = TRUE;
+            }
+        }
+        /* CodeWeavers HACK bug 10104 - Allow a registry key to dictate the number of vertex constants. */
+        if (!get_config_key(hkey, appkey, "fixed_vs_constants_limit", buffer, size))
+        {
+            int constants = atoi(buffer);
+            if (constants >= 0)
+            {
+                cxgames_hacks.fixed_vs_constants_limit = constants;
+                TRACE("Fixing # of GLSL vs constants at %d.\n", constants);
+            }
+            else
+                ERR("fixed_vs_constants_limit must be >= 0.\n");
+        }
         if (!get_config_key(hkey, appkey, "AlwaysOffscreen", buffer, size)
                 && !strcmp(buffer,"disabled"))
         {
@@ -313,6 +409,66 @@ static BOOL wined3d_dll_init(HINSTANCE hInstDLL)
         {
             TRACE("Disabling 3D support.\n");
             wined3d_settings.no_3d = TRUE;
+        }
+        /* CodeWeavers Hack bug 5501 - Allow registry disabling of OpenGL extensions. */
+        if (!get_config_key(hkey, appkey, "DisabledExtensions", buffer, size))
+        {
+            size_t size = strlen(buffer) + 1;
+            cxgames_hacks.disabled_extensions = HeapAlloc(GetProcessHeap(), 0, size);
+            if (cxgames_hacks.disabled_extensions)
+                memcpy(cxgames_hacks.disabled_extensions, buffer, size);
+        }
+        if (!get_config_key( hkey, appkey, "pow_abs", buffer, size) )
+        {
+            if (!strcmp(buffer,"disabled"))
+            {
+                TRACE("Disabling the ABS operator on POW src arguments in ARB.\n");
+                cxgames_hacks.no_pow_abs = TRUE;
+            }
+        }
+        if (!get_config_key(hkey, appkey, "NoINTZ", buffer, size))
+        {
+            if (!strcmp(buffer, "enabled"))
+            {
+                TRACE("Disabling INTZ support.\n");
+                cxgames_hacks.no_intz = TRUE;
+            }
+        }
+        if (!get_config_key(hkey, appkey, "AllowGlMapBuffer", buffer, size))
+        {
+            if (!strcmp(buffer, "always"))
+            {
+                TRACE("Always using glMapBuffer if possible.\n");
+                cxgames_hacks.allow_glmapbuffer = WINED3D_MAPBUF_ALWAYS;
+            }
+            else if (!strcmp(buffer, "static"))
+            {
+                TRACE("Using glMapBuffer only for static buffers.\n");
+                cxgames_hacks.allow_glmapbuffer = WINED3D_MAPBUF_STATIC;
+            }
+            else if (!strcmp(buffer, "never"))
+            {
+                TRACE("Never using glMapBuffer.\n");
+                cxgames_hacks.allow_glmapbuffer = WINED3D_MAPBUF_NEVER;
+            }
+            else if (!strcmp(buffer, "never_nv"))
+            {
+                TRACE("Never using glMapBuffer if NVidia's threaded optimizations are used.\n");
+                cxgames_hacks.allow_glmapbuffer = WINED3D_MAPBUF_NEVER_NV;
+            }
+            else
+            {
+                TRACE("Using glMapBuffer only for static buffers\n");
+                TRACE("if NVidia's threaded optimizations are used.\n");
+            }
+        }
+        if (!get_config_key(hkey, appkey, "GLSL130SM4", buffer, size))
+        {
+            if (!strcmp(buffer, "enabled"))
+            {
+                TRACE("Enabling SM4 on GLSL 1.30.\n");
+                cxgames_hacks.glsl130_sm4 = TRUE;
+            }
         }
     }
 
@@ -346,6 +502,7 @@ static BOOL wined3d_dll_destroy(HINSTANCE hInstDLL)
     HeapFree(GetProcessHeap(), 0, wndproc_table.entries);
 
     HeapFree(GetProcessHeap(), 0, wined3d_settings.logo);
+    HeapFree(GetProcessHeap(), 0, cxgames_hacks.disabled_extensions);
     UnregisterClassA(WINED3D_OPENGL_WINDOW_CLASS_NAME, hInstDLL);
 
     DeleteCriticalSection(&wined3d_wndproc_cs);

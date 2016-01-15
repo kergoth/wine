@@ -535,6 +535,13 @@ static BOOL shader_record_register_usage(struct wined3d_shader *shader, struct w
                 else
                 {
                     shader->u.ps.input_reg_used[reg->idx[0].offset] = TRUE;
+                    if (reg_maps->shader_version.major < 3)
+                    {
+                        if (reg->idx[0].offset)
+                            reg_maps->secondary_color = TRUE;
+                        else
+                            reg_maps->color = TRUE;
+                    }
                 }
             }
             else
@@ -746,6 +753,14 @@ static HRESULT shader_get_registers_used(struct wined3d_shader *shader, const st
                             && semantic->usage == WINED3D_DECL_USAGE_POSITION && !semantic->usage_idx)
                         return WINED3DERR_INVALIDCALL;
                     reg_maps->input_registers |= 1u << reg_idx;
+                    if (shader_version.type == WINED3D_SHADER_TYPE_PIXEL
+                            && semantic->usage == WINED3D_DECL_USAGE_COLOR)
+                    {
+                        if (semantic->usage_idx == 1)
+                            reg_maps->secondary_color = TRUE;
+                        else if (!semantic->usage_idx)
+                            reg_maps->color = TRUE;
+                    }
                     shader_signature_from_semantic(&input_signature_elements[reg_idx], semantic);
                     break;
 
@@ -1872,7 +1887,7 @@ static void shader_trace_init(const struct wined3d_shader_frontend *fe, void *fe
     }
 }
 
-static void shader_cleanup(struct wined3d_shader *shader)
+void shader_cleanup(struct wined3d_shader *shader)
 {
     HeapFree(GetProcessHeap(), 0, shader->output_signature.elements);
     HeapFree(GetProcessHeap(), 0, shader->input_signature.elements);
@@ -2131,9 +2146,10 @@ ULONG CDECL wined3d_shader_decref(struct wined3d_shader *shader)
 
     if (!refcount)
     {
-        shader_cleanup(shader);
+        const struct wined3d_device *device = shader->device;
+
         shader->parent_ops->wined3d_object_destroyed(shader->parent);
-        HeapFree(GetProcessHeap(), 0, shader);
+        wined3d_cs_emit_shader_cleanup(device->cs, shader);
     }
 
     return refcount;
@@ -2211,6 +2227,9 @@ HRESULT CDECL wined3d_shader_set_local_constants_float(struct wined3d_shader *sh
 void find_vs_compile_args(const struct wined3d_state *state, const struct wined3d_shader *shader,
         WORD swizzle_map, struct vs_compile_args *args, const struct wined3d_d3d_info *d3d_info)
 {
+    unsigned int i;
+    const struct wined3d_texture *texture;
+
     args->fog_src = state->render_states[WINED3D_RS_FOGTABLEMODE]
             == WINED3D_FOG_NONE ? VS_FOG_COORD : VS_FOG_Z;
     args->clip_enabled = state->render_states[WINED3D_RS_CLIPPING]
@@ -2218,10 +2237,25 @@ void find_vs_compile_args(const struct wined3d_state *state, const struct wined3
     args->point_size = state->gl_primitive_type == GL_POINTS;
     args->per_vertex_point_size = shader->reg_maps.point_size;
     args->swizzle_map = swizzle_map;
+
+    args->alpha_override = 0;
     if (d3d_info->emulated_flatshading)
         args->flatshading = state->render_states[WINED3D_RS_SHADEMODE] == WINED3D_SHADE_FLAT;
     else
         args->flatshading = FALSE;
+    for (i = 0; i < MAX_VERTEX_SAMPLERS; ++i)
+    {
+        TRACE("shader->reg_maps.resource_info[%u].type %x.\n", i, shader->reg_maps.resource_info[i].type);
+        if (!shader->reg_maps.resource_info[i].type)
+            continue;
+
+        texture = state->textures[MAX_FRAGMENT_SAMPLERS + i];
+        if (!texture)
+            continue;
+
+        if (texture->resource.format_flags & WINED3DFMT_FLAG_ALPHA_OVERRIDE)
+            args->alpha_override |= 1u << i;
+    }
 }
 
 static BOOL match_usage(BYTE usage1, BYTE usage_idx1, BYTE usage2, BYTE usage_idx2)
@@ -2405,6 +2439,7 @@ static HRESULT geometryshader_init(struct wined3d_shader *shader, struct wined3d
     return WINED3D_OK;
 }
 
+/* FIXME: Add another d3d_info flag for alpha test emulation? */
 void find_ps_compile_args(const struct wined3d_state *state, const struct wined3d_shader *shader,
         BOOL position_transformed, struct ps_compile_args *args, const struct wined3d_context *context)
 {
@@ -2416,7 +2451,7 @@ void find_ps_compile_args(const struct wined3d_state *state, const struct wined3
     memset(args, 0, sizeof(*args)); /* FIXME: Make sure all bits are set. */
     if (!gl_info->supported[ARB_FRAMEBUFFER_SRGB] && state->render_states[WINED3D_RS_SRGBWRITEENABLE])
     {
-        unsigned int rt_fmt_flags = state->fb->render_targets[0]->format_flags;
+        unsigned int rt_fmt_flags = state->fb.render_targets[0]->format_flags;
         if (rt_fmt_flags & WINED3DFMT_FLAG_SRGB_WRITE)
         {
             static unsigned int warned = 0;
@@ -2520,16 +2555,47 @@ void find_ps_compile_args(const struct wined3d_state *state, const struct wined3
 
     for (i = 0; i < MAX_FRAGMENT_SAMPLERS; ++i)
     {
-        if (!shader->reg_maps.resource_info[i].type)
-            continue;
+        if (shader->reg_maps.shader_version.major <= 3)
+        {
+            TRACE("shader->reg_maps.resource_info[%u] %x.\n", i, shader->reg_maps.resource_info[i].type);
+            if (!shader->reg_maps.resource_info[i].type)
+                continue;
 
-        texture = state->textures[i];
+            texture = state->textures[i];
+        }
+        else
+        {
+            const struct wined3d_shader_sampler_map *map = &shader->reg_maps.sampler_map;
+            const struct wined3d_shader_sampler_map_entry *entry;
+            const struct wined3d_shader_resource_view *view;
+            unsigned int j;
+
+            texture = NULL;
+            for (j = 0; j < map->count; ++j)
+            {
+                if (map->entries[j].sampler_idx != i)
+                    continue;
+
+                entry = &map->entries[j];
+                TRACE("Found sampler map entry %u, sampler_idx %u, resource_idx %u.\n",
+                        j, i, entry->resource_idx);
+                if (!(view = state->shader_resource_view[WINED3D_SHADER_TYPE_PIXEL][entry->resource_idx]))
+                    break;
+
+                TRACE("sampler %u, view->resource->type %x.\n", i, view->resource->type);
+                if (view->resource->type != WINED3D_RTYPE_BUFFER)
+                    texture = wined3d_texture_from_resource(view->resource);
+                break;
+            }
+        }
         if (!texture)
         {
             args->color_fixup[i] = COLOR_FIXUP_IDENTITY;
             continue;
         }
         args->color_fixup[i] = texture->resource.format->color_fixup;
+        TRACE("Color fixup for sampler %u:\n", i);
+        dump_color_fixup_desc(args->color_fixup[i]);
 
         if (texture->resource.format_flags & WINED3DFMT_FLAG_SHADOW)
             args->shadow |= 1u << i;
@@ -2537,7 +2603,11 @@ void find_ps_compile_args(const struct wined3d_state *state, const struct wined3
         /* Flag samplers that need NP2 texcoord fixup. */
         if (!(texture->flags & WINED3D_TEXTURE_POW2_MAT_IDENT))
             args->np2_fixup |= (1u << i);
+
+        if (texture->resource.format_flags & WINED3DFMT_FLAG_ALPHA_OVERRIDE)
+            args->alpha_override |= 1u << i;
     }
+    TRACE("args->np2_fixup %x.\n", args->np2_fixup);
     if (shader->reg_maps.shader_version.major >= 3)
     {
         if (position_transformed)
@@ -2581,6 +2651,16 @@ void find_ps_compile_args(const struct wined3d_state *state, const struct wined3
             args->fog = WINED3D_FFP_PS_FOG_OFF;
         }
     }
+    /* Only inser the KIL fragment.texcoord[clip] line if clipping is used.
+     * It is expensive because KIL can break early Z discard. Its cheaper to
+     * have two shaders than KIL needlessly. The same applies to the
+     * clipplane emulation in GLSL with discard. */
+    if (!shader->device->adapter->d3d_info.vs_clipping && use_vs(state)
+            && state->render_states[WINED3D_RS_CLIPPING]
+            && state->render_states[WINED3D_RS_CLIPPLANEENABLE])
+    {
+        args->clip = TRUE;
+    }
 
     if (context->d3d_info->limits.varying_count < wined3d_max_compat_varyings(context->gl_info))
     {
@@ -2613,6 +2693,9 @@ void find_ps_compile_args(const struct wined3d_state *state, const struct wined3
 
     args->pointsprite = state->render_states[WINED3D_RS_POINTSPRITEENABLE]
             && state->gl_primitive_type == GL_POINTS;
+
+    if (!gl_info->supported[WINED3D_GL_LEGACY_CONTEXT])
+        args->alpha_func = wined3d_gl_compare_func(state->render_states[WINED3D_RS_ALPHAFUNC]);
 
     if (d3d_info->emulated_flatshading)
         args->flatshading = state->render_states[WINED3D_RS_SHADEMODE] == WINED3D_SHADE_FLAT;

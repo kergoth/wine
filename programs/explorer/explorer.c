@@ -20,6 +20,9 @@
  * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301, USA
  */
 
+#include <stdio.h>
+#include <unistd.h>
+
 #define COBJMACROS
 
 #include "wine/unicode.h"
@@ -738,6 +741,25 @@ int WINAPI wWinMain(HINSTANCE hinstance,
     INITCOMMONCONTROLSEX init_info;
 
     memset(&parameters,0,sizeof(parameters));
+
+    /*  CodeWeavers-specific hack:  We need to exclude ourselves
+        from the winewrapper's wait-children process.  So we'll
+        close the wait-children pipe if it is defined.  */
+    {
+        char *waitchild_envstring;
+        unsigned int waitchild_pipeid;
+        waitchild_envstring = getenv("WINE_WAIT_CHILD_PIPE");
+        if (waitchild_envstring)
+        {
+            waitchild_pipeid = atoi(waitchild_envstring);
+            if (waitchild_pipeid)
+            { 
+                close(waitchild_pipeid);
+            }
+            unsetenv("WINE_WAIT_CHILD_PIPE");
+        }
+    }
+
     explorer_hInstance = hinstance;
     parse_command_line(cmdline,&parameters);
     hres = OleInitialize(NULL);

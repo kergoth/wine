@@ -293,6 +293,7 @@ HANDLE thread_init(void)
     teb->Tib.StackBase = (void *)~0UL;
     teb->StaticUnicodeString.Buffer = teb->StaticUnicodeBuffer;
     teb->StaticUnicodeString.MaximumLength = sizeof(teb->StaticUnicodeBuffer);
+    teb->ThreadLocalStoragePointer = teb->TlsSlots;
 
     thread_data = (struct ntdll_thread_data *)teb->SpareBytes1;
     thread_data->request_fd = -1;
@@ -528,6 +529,7 @@ NTSTATUS WINAPI RtlCreateUserThread( HANDLE process, const SECURITY_DESCRIPTOR *
     teb->ClientId.UniqueThread  = ULongToHandle(tid);
     teb->StaticUnicodeString.Buffer        = teb->StaticUnicodeBuffer;
     teb->StaticUnicodeString.MaximumLength = sizeof(teb->StaticUnicodeBuffer);
+    teb->ThreadLocalStoragePointer = teb->TlsSlots;
 
     /* create default activation context frame for new thread */
     RtlGetActiveActivationContext(&actctx);

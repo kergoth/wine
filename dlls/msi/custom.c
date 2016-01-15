@@ -378,6 +378,105 @@ static UINT wait_process_handle(MSIPACKAGE* package, UINT type,
     return rc;
 }
 
+/* CROSSOVER HACK BUG 11581 */
+static int mta_thread_enabled = -1;
+static int mta_thread_refcount = 0;
+static HANDLE mta_thread_started = NULL;
+static HANDLE mta_thread_signal = NULL;
+static CRITICAL_SECTION mta_thread_cs;
+static CRITICAL_SECTION_DEBUG mta_thread_cs_debug =
+{
+    0, 0, &mta_thread_cs,
+    { &mta_thread_cs_debug.ProcessLocksList,
+      &mta_thread_cs_debug.ProcessLocksList },
+      0, 0, { (DWORD_PTR)(__FILE__ ": mta_thread_cs") }
+};
+static CRITICAL_SECTION mta_thread_cs = { &mta_thread_cs_debug, -1, 0, 0, 0, 0 };
+static HMODULE mta_thread_hmsi;
+
+static DWORD WINAPI mta_thread_proc(void *arg)
+{
+    CoInitializeEx(0, COINIT_MULTITHREADED);
+
+    SetEvent(mta_thread_started);
+
+    while (1)
+    {
+        WaitForSingleObject(mta_thread_signal, INFINITE);
+
+        EnterCriticalSection(&mta_thread_cs);
+
+        if (mta_thread_refcount == 0)
+            break;
+
+        LeaveCriticalSection(&mta_thread_cs);
+    }
+
+    CloseHandle(mta_thread_started);
+    CloseHandle(mta_thread_signal);
+
+    mta_thread_started = mta_thread_signal = NULL;
+
+    LeaveCriticalSection(&mta_thread_cs);
+
+    CoUninitialize();
+
+    FreeLibraryAndExitThread(mta_thread_hmsi, 0);
+
+    return 0;
+}
+
+static void mta_thread_ref(void)
+{
+    if (mta_thread_enabled == 0) return;
+
+    EnterCriticalSection(&mta_thread_cs);
+
+    if (mta_thread_enabled == -1)
+    {
+        char buffer[2];
+
+        mta_thread_enabled = (GetEnvironmentVariableA("CX_MSI_MTA", buffer, 2) != 0);
+        
+        if (mta_thread_enabled == 0)
+        {
+            LeaveCriticalSection(&mta_thread_cs);
+            return;
+        }
+    }
+
+    if (!mta_thread_started)
+    {
+        mta_thread_started = CreateEventW(NULL, TRUE, FALSE, NULL);
+        mta_thread_signal = CreateEventW(NULL, FALSE, FALSE, NULL);
+
+        GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS, (LPCWSTR)mta_thread_proc, &mta_thread_hmsi);
+
+        CreateThread(NULL, 0, mta_thread_proc, NULL, 0, NULL);
+
+        WaitForSingleObject(mta_thread_started, INFINITE);
+    }
+
+    mta_thread_refcount++;
+
+    LeaveCriticalSection(&mta_thread_cs);
+}
+
+static void mta_thread_unref(void)
+{
+    if (mta_thread_enabled == 0) return;
+
+    EnterCriticalSection(&mta_thread_cs);
+
+    mta_thread_refcount--;
+
+    if (mta_thread_refcount == 0)
+        SetEvent(mta_thread_signal);
+
+    LeaveCriticalSection(&mta_thread_cs);
+}
+/* END CROSSOVER HACK BUG 11581 */
+
 typedef struct _msi_custom_action_info {
     struct list entry;
     LONG refs;
@@ -631,6 +730,9 @@ static DWORD WINAPI DllThread( LPVOID arg )
     TRACE("custom action (%x) returned %i\n", GetCurrentThreadId(), rc );
 
     MsiCloseAllHandles();
+
+    mta_thread_unref();
+
     return rc;
 }
 
@@ -655,6 +757,8 @@ static msi_custom_action_info *do_msidbCustomActionTypeDll(
     EnterCriticalSection( &msi_custom_action_cs );
     list_add_tail( &msi_pending_custom_actions, &info->entry );
     LeaveCriticalSection( &msi_custom_action_cs );
+
+    mta_thread_ref();
 
     info->handle = CreateThread( NULL, 0, DllThread, &info->guid, 0, NULL );
     if (!info->handle)

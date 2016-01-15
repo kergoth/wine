@@ -5895,6 +5895,58 @@ static BOOL null_wglReleaseTexImageARB( struct wgl_pbuffer * hPbuffer, int iBuff
 static BOOL null_wglSetPbufferAttribARB( struct wgl_pbuffer * hPbuffer, const int* piAttribList ) { return 0; }
 static BOOL null_wglSetPixelFormatWINE( HDC hdc, int format ) { return 0; }
 static BOOL null_wglSwapIntervalEXT( int interval ) { return 0; }
+/* CrossOver Hack 10798 */
+static void null_gluBeginCurve( void* nurb ) { }
+static void null_gluBeginPolygon( void* tess ) { }
+static void null_gluBeginSurface( void* nurb ) { }
+static void null_gluBeginTrim( void* nurb ) { }
+static GLint null_gluBuild1DMipmaps( GLenum target, GLint internalFormat, GLsizei width, GLenum format, GLenum type, const void * data ) { return 0; }
+static GLint null_gluBuild2DMipmaps( GLenum target, GLint internalFormat, GLsizei width, GLsizei height, GLenum format, GLenum type, const void * data ) { return 0; }
+static void null_gluCylinder( void* quad, GLdouble base, GLdouble top, GLdouble height, GLint slices, GLint stacks ) { }
+static void null_gluDeleteNurbsRenderer( void* nurb ) { }
+static void null_gluDeleteQuadric( void* quad ) { }
+static void null_gluDeleteTess( void* tess ) { }
+static void null_gluDisk( void* quad, GLdouble inner, GLdouble outer, GLint slices, GLint loops ) { }
+static void null_gluEndCurve( void* nurb ) { }
+static void null_gluEndPolygon( void* tess ) { }
+static void null_gluEndSurface( void* nurb ) { }
+static void null_gluEndTrim( void* nurb ) { }
+static const GLubyte * null_gluErrorString( GLenum error ) { return 0; }
+static void null_gluGetNurbsProperty( void* nurb, GLenum property, GLfloat* data ) { }
+static const GLubyte * null_gluGetString( GLenum name ) { return 0; }
+static void null_gluGetTessProperty( void* tess, GLenum which, GLdouble* data ) { }
+static void null_gluLoadSamplingMatrices( void* nurb, const GLfloat * model, const GLfloat * perspective, const GLint * view ) { }
+static void null_gluLookAt( GLdouble eyeX, GLdouble eyeY, GLdouble eyeZ, GLdouble centerX, GLdouble centerY, GLdouble centerZ, GLdouble upX, GLdouble upY, GLdouble upZ ) { }
+static void* null_gluNewNurbsRenderer( void ) { return 0; }
+static void* null_gluNewQuadric( void ) { return 0; }
+static void* null_gluNewTess( void ) { return 0; }
+static void null_gluNextContour( void* tess, GLenum type ) { }
+static void null_gluNurbsCallback( void* nurb, GLenum which, void * CallBackFunc ) { }
+static void null_gluNurbsCurve( void* nurb, GLint knotCount, GLfloat * knots, GLint stride, GLfloat * control, GLint order, GLenum type ) { }
+static void null_gluNurbsProperty( void* nurb, GLenum property, GLfloat value ) { }
+static void null_gluNurbsSurface( void* nurb, GLint sKnotCount, GLfloat* sKnots, GLint tKnotCount, GLfloat* tKnots, GLint sStride, GLint tStride, GLfloat* control, GLint sOrder, GLint tOrder, GLenum type ) { }
+static void null_gluOrtho2D( GLdouble left, GLdouble right, GLdouble bottom, GLdouble top ) { }
+static void null_gluPartialDisk( void* quad, GLdouble inner, GLdouble outer, GLint slices, GLint loops, GLdouble start, GLdouble sweep ) { }
+static void null_gluPerspective( GLdouble fovy, GLdouble aspect, GLdouble zNear, GLdouble zFar ) { }
+static void null_gluPickMatrix( GLdouble x, GLdouble y, GLdouble delX, GLdouble delY, GLint * viewport ) { }
+static GLint null_gluProject( GLdouble objX, GLdouble objY, GLdouble objZ, const GLdouble * model, const GLdouble * proj, const GLint * view, GLdouble* winX, GLdouble* winY, GLdouble* winZ ) { return 0; }
+static void null_gluPwlCurve( void* nurb, GLint count, GLfloat* data, GLint stride, GLenum type ) { }
+static void null_gluQuadricCallback( void* quad, GLenum which, void * CallBackFunc ) { }
+static void null_gluQuadricDrawStyle( void* quad, GLenum draw ) { }
+static void null_gluQuadricNormals( void* quad, GLenum normal ) { }
+static void null_gluQuadricOrientation( void* quad, GLenum orientation ) { }
+static void null_gluQuadricTexture( void* quad, GLboolean texture ) { }
+static GLint null_gluScaleImage( GLenum format, GLsizei wIn, GLsizei hIn, GLenum typeIn, const void * dataIn, GLsizei wOut, GLsizei hOut, GLenum typeOut, GLvoid* dataOut ) { return 0; }
+static void null_gluSphere( void* quad, GLdouble radius, GLint slices, GLint stacks ) { }
+static void null_gluTessBeginContour( void* tess ) { }
+static void null_gluTessBeginPolygon( void* tess, GLvoid* data ) { }
+static void null_gluTessCallback( void* tess, GLenum which, void * CallBackFunc ) { }
+static void null_gluTessEndContour( void* tess ) { }
+static void null_gluTessEndPolygon( void* tess ) { }
+static void null_gluTessNormal( void* tess, GLdouble valueX, GLdouble valueY, GLdouble valueZ ) { }
+static void null_gluTessProperty( void* tess, GLenum which, GLdouble data ) { }
+static void null_gluTessVertex( void* tess, GLdouble * location, GLvoid* data ) { }
+static GLint null_gluUnProject( GLdouble winX, GLdouble winY, GLdouble winZ, const GLdouble * model, const GLdouble * proj, const GLint * view, GLdouble* objX, GLdouble* objY, GLdouble* objZ ) { return 0; }
 
 struct opengl_funcs null_opengl_funcs =
 {
@@ -8782,5 +8834,58 @@ struct opengl_funcs null_opengl_funcs =
         null_wglSetPbufferAttribARB,
         null_wglSetPixelFormatWINE,
         null_wglSwapIntervalEXT,
+    },
+    {   /* CrossOver Hack 10798 */
+        null_gluBeginCurve,
+        null_gluBeginPolygon,
+        null_gluBeginSurface,
+        null_gluBeginTrim,
+        null_gluBuild1DMipmaps,
+        null_gluBuild2DMipmaps,
+        null_gluCylinder,
+        null_gluDeleteNurbsRenderer,
+        null_gluDeleteQuadric,
+        null_gluDeleteTess,
+        null_gluDisk,
+        null_gluEndCurve,
+        null_gluEndPolygon,
+        null_gluEndSurface,
+        null_gluEndTrim,
+        null_gluErrorString,
+        null_gluGetNurbsProperty,
+        null_gluGetString,
+        null_gluGetTessProperty,
+        null_gluLoadSamplingMatrices,
+        null_gluLookAt,
+        null_gluNewNurbsRenderer,
+        null_gluNewQuadric,
+        null_gluNewTess,
+        null_gluNextContour,
+        null_gluNurbsCallback,
+        null_gluNurbsCurve,
+        null_gluNurbsProperty,
+        null_gluNurbsSurface,
+        null_gluOrtho2D,
+        null_gluPartialDisk,
+        null_gluPerspective,
+        null_gluPickMatrix,
+        null_gluProject,
+        null_gluPwlCurve,
+        null_gluQuadricCallback,
+        null_gluQuadricDrawStyle,
+        null_gluQuadricNormals,
+        null_gluQuadricOrientation,
+        null_gluQuadricTexture,
+        null_gluScaleImage,
+        null_gluSphere,
+        null_gluTessBeginContour,
+        null_gluTessBeginPolygon,
+        null_gluTessCallback,
+        null_gluTessEndContour,
+        null_gluTessEndPolygon,
+        null_gluTessNormal,
+        null_gluTessProperty,
+        null_gluTessVertex,
+        null_gluUnProject,
     }
 };
