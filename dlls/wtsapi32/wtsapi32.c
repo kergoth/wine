@@ -311,7 +311,8 @@ BOOL WINAPI WTSQuerySessionInformationW(
 BOOL WINAPI WTSQueryUserToken(ULONG session_id, PHANDLE token)
 {
     FIXME("%u %p\n", session_id, token);
-    return FALSE;
+    if (token) *token = GetCurrentProcessToken();
+    return token != NULL;
 }
 
 /************************************************************
