@@ -1421,6 +1421,18 @@ RPC_STATUS WINAPI RpcServerRegisterAuthInfoW( RPC_WSTR ServerPrincName, ULONG Au
 
     TRACE("(%s,%u,%p,%p)\n", debugstr_w(ServerPrincName), AuthnSvc, GetKeyFn, Arg);
 
+    /* CXHACK 11758: Office 2013 ClickToRun installer is hot happy with our auth implementation. */
+    if(1) {
+        char exe_name[MAX_PATH], *p;
+        GetModuleFileNameA(GetModuleHandleW(NULL), exe_name, sizeof(exe_name));
+        p = strrchr(exe_name, '\\');
+        p = p ? p+1 : exe_name;
+        if(!strcasecmp(p, "officeclicktorun.exe")) {
+            FIXME("HACK: ignoring call, returning success\n");
+            return RPC_S_OK;
+        }
+    }
+
     sec_status = EnumerateSecurityPackagesW(&package_count, &packages);
     if (sec_status != SEC_E_OK)
     {

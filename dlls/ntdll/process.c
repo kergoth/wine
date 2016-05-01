@@ -87,6 +87,18 @@ PEB * WINAPI RtlGetCurrentPeb(void)
 HANDLE CDECL __wine_make_process_system(void)
 {
     HANDLE ret = 0;
+
+    /*  CodeWeavers-specific hack:  We need to exclude ourselves
+        from the winewrapper's wait-children process.  So we'll
+        close the wait-children pipe if it is defined.  */
+    const char *child_pipe = getenv("WINE_WAIT_CHILD_PIPE");
+    if (child_pipe)
+    {
+        int fd = atoi(child_pipe);
+        if (fd) close( fd );
+        unsetenv("WINE_WAIT_CHILD_PIPE");
+    }
+
     SERVER_START_REQ( make_process_system )
     {
         if (!wine_server_call( req )) ret = wine_server_ptr_handle( reply->event );
@@ -242,6 +254,12 @@ NTSTATUS WINAPI NtQueryInformationProcess(
                 {
                     /* FIXME : real data */
                     memset(&pvmi, 0 , sizeof(VM_COUNTERS));
+                    #define ONEGIG (1024 * 1024 * 1024);
+                    pvmi.QuotaPeakPagedPoolUsage = ONEGIG;
+                    pvmi.QuotaPagedPoolUsage = ONEGIG;
+                    pvmi.QuotaPeakNonPagedPoolUsage = ONEGIG;
+                    pvmi.QuotaNonPagedPoolUsage = ONEGIG;
+                    #undef ONEGIG
 
                     len = ProcessInformationLength;
                     if (len != FIELD_OFFSET(VM_COUNTERS,PrivatePageCount)) len = sizeof(VM_COUNTERS);

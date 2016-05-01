@@ -22,6 +22,7 @@
 
 #include <stdarg.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #ifdef HAVE_UNISTD_H
 # include <unistd.h>
@@ -70,6 +71,14 @@ static HBITMAP DESKTOP_LoadBitmap( const WCHAR *filename )
         if (buffer[len - 1] != '\\') buffer[len++] = '\\';
         lstrcpynW( buffer + len, filename, MAX_PATH - len );
         hbitmap = LoadImageW( 0, buffer, IMAGE_BITMAP, 0, 0, LR_CREATEDIBSECTION | LR_LOADFROMFILE );
+        if (!hbitmap && getenv("CX_ROOT"))
+        {
+            MultiByteToWideChar( CP_UNIXCP, 0, getenv("CX_ROOT"), -1, buffer, MAX_PATH );
+            len = lstrlenW( buffer );
+            if (buffer[len - 1] != '/') buffer[len++] = '/';
+            lstrcpynW( buffer + len, filename, MAX_PATH - len );
+            hbitmap = LoadImageW( 0, buffer, IMAGE_BITMAP, 0, 0, LR_CREATEDIBSECTION | LR_LOADFROMFILE );
+        }
     }
     return hbitmap;
 }

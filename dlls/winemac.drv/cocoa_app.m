@@ -211,6 +211,62 @@ static NSString* WineLocalizedString(unsigned int stringID)
         [super dealloc];
     }
 
+    // CrossOver Hack 10912: Mac Edit menu
+    - (BOOL) isEditMenuAction:(SEL)selector
+    {
+        return selector == @selector(copy:) || selector == @selector(cut:) ||
+               selector == @selector(delete:) || selector == @selector(paste:) ||
+               selector == @selector(selectAll:) || selector == @selector(undo:);
+    }
+
+    - (void) changeEditMenuKeyEquivalentsForWindow:(NSWindow*)window
+    {
+        if (mac_edit_menu == MAC_EDIT_MENU_DISABLED)
+        {
+            if ([window isKindOfClass:[WineWindow class]])
+            {
+                NSMutableArray* menus = [NSMutableArray arrayWithObject:[NSApp mainMenu]];
+
+                while ([menus count])
+                {
+                    NSMenu* menu = [menus objectAtIndex:0];
+                    [menus removeObjectAtIndex:0];
+
+                    for (NSMenuItem* item in [menu itemArray])
+                    {
+                        if ([self isEditMenuAction:[item action]] && ![item target] &&
+                            [[item keyEquivalent] length])
+                        {
+                            NSDictionary* record = [NSDictionary dictionaryWithObjectsAndKeys:
+                                                    item, @"menuItem",
+                                                    [item keyEquivalent], @"keyEquivalent",
+                                                    nil];
+                            if (!changedKeyEquivalents)
+                                changedKeyEquivalents = [[NSMutableArray alloc] init];
+                            [changedKeyEquivalents addObject:record];
+
+                            [item setKeyEquivalent:@""];
+                        }
+
+                        if ([item hasSubmenu])
+                            [menus addObject:[item submenu]];
+                    }
+                }
+            }
+            else
+            {
+                for (NSDictionary* record in changedKeyEquivalents)
+                {
+                    NSMenuItem* item = [record objectForKey:@"menuItem"];
+                    NSString* equiv = [record objectForKey:@"keyEquivalent"];
+                    [item setKeyEquivalent:equiv];
+                }
+
+                [changedKeyEquivalents removeAllObjects];
+            }
+        }
+    }
+
     - (void) transformProcessToForeground
     {
         if ([NSApp activationPolicy] != NSApplicationActivationPolicyRegular)
@@ -258,6 +314,23 @@ static NSString* WineLocalizedString(unsigned int stringID)
             [item setSubmenu:submenu];
             [mainMenu addItem:item];
 
+            // CrossOver Hack 10912: Mac Edit menu
+            if (mac_edit_menu != MAC_EDIT_MENU_DISABLED)
+            {
+                submenu = [[[NSMenu alloc] initWithTitle:@"Edit"] autorelease];
+                [submenu addItemWithTitle:@"Undo" action:@selector(undo:) keyEquivalent:@"z"];
+                [submenu addItem:[NSMenuItem separatorItem]];
+                [submenu addItemWithTitle:@"Cut" action:@selector(cut:) keyEquivalent:@"x"];
+                [submenu addItemWithTitle:@"Copy" action:@selector(copy:) keyEquivalent:@"c"];
+                [submenu addItemWithTitle:@"Paste" action:@selector(paste:) keyEquivalent:@"v"];
+                [submenu addItemWithTitle:@"Delete" action:@selector(delete:) keyEquivalent:@""];
+                [submenu addItemWithTitle:@"Select All" action:@selector(selectAll:) keyEquivalent:@"a"];
+                item = [[[NSMenuItem alloc] init] autorelease];
+                [item setTitle:@"Edit"];
+                [item setSubmenu:submenu];
+                [mainMenu addItem:item];
+            }
+
             // Window menu
             submenu = [[[NSMenu alloc] initWithTitle:WineLocalizedString(STRING_MENU_WINDOW)] autorelease];
             [submenu addItemWithTitle:WineLocalizedString(STRING_MENU_ITEM_MINIMIZE)
@@ -284,6 +357,9 @@ static NSString* WineLocalizedString(unsigned int stringID)
 
             [NSApp setMainMenu:mainMenu];
             [NSApp setWindowsMenu:submenu];
+
+            // CrossOver Hack 10912: Mac Edit menu
+            [self changeEditMenuKeyEquivalentsForWindow:[NSApp keyWindow]];
 
             [NSApp setApplicationIconImage:self.applicationIcon];
         }
@@ -1590,6 +1666,7 @@ static NSString* WineLocalizedString(unsigned int stringID)
             {
                 if (clippingCursor)
                     [self clipCursorLocation:&point];
+                point = cgpoint_win_from_mac(point);
 
                 event = macdrv_create_event(MOUSE_MOVED_ABSOLUTE, targetWindow);
                 event->mouse_moved.x = point.x;
@@ -1600,18 +1677,20 @@ static NSString* WineLocalizedString(unsigned int stringID)
             }
             else
             {
+                double scale = retina_on ? 2 : 1;
+
                 /* Add event delta to accumulated delta error */
                 /* deltaY is already flipped */
                 mouseMoveDeltaX += [anEvent deltaX];
                 mouseMoveDeltaY += [anEvent deltaY];
 
                 event = macdrv_create_event(MOUSE_MOVED, targetWindow);
-                event->mouse_moved.x = mouseMoveDeltaX;
-                event->mouse_moved.y = mouseMoveDeltaY;
+                event->mouse_moved.x = mouseMoveDeltaX * scale;
+                event->mouse_moved.y = mouseMoveDeltaY * scale;
 
                 /* Keep the remainder after integer truncation. */
-                mouseMoveDeltaX -= event->mouse_moved.x;
-                mouseMoveDeltaY -= event->mouse_moved.y;
+                mouseMoveDeltaX -= event->mouse_moved.x / scale;
+                mouseMoveDeltaY -= event->mouse_moved.y / scale;
             }
 
             if (event->type == MOUSE_MOVED_ABSOLUTE || event->mouse_moved.x || event->mouse_moved.y)
@@ -1730,6 +1809,8 @@ static NSString* WineLocalizedString(unsigned int stringID)
             {
                 macdrv_event* event;
 
+                pt = cgpoint_win_from_mac(pt);
+
                 event = macdrv_create_event(MOUSE_BUTTON, window);
                 event->mouse_button.button = [theEvent buttonNumber];
                 event->mouse_button.pressed = pressed;
@@ -1810,6 +1891,8 @@ static NSString* WineLocalizedString(unsigned int stringID)
                 macdrv_event* event;
                 double x, y;
                 BOOL continuous = FALSE;
+
+                pt = cgpoint_win_from_mac(pt);
 
                 event = macdrv_create_event(MOUSE_SCROLL, window);
                 event->mouse_scroll.x = pt.x;
@@ -2037,6 +2120,16 @@ static NSString* WineLocalizedString(unsigned int stringID)
             NSWindow* window = [note object];
             [keyWindows removeObjectIdenticalTo:window];
             [keyWindows insertObject:window atIndex:0];
+            // CrossOver Hack 10912: Mac Edit menu
+            [self changeEditMenuKeyEquivalentsForWindow:window];
+        }];
+
+        // CrossOver Hack 10912: Mac Edit menu
+        [nc addObserverForName:NSWindowDidResignKeyNotification
+                        object:nil
+                         queue:nil
+                    usingBlock:^(NSNotification *note){
+            [self changeEditMenuKeyEquivalentsForWindow:nil];
         }];
 
         [nc addObserverForName:NSWindowWillCloseNotification
@@ -2143,6 +2236,26 @@ static NSString* WineLocalizedString(unsigned int stringID)
                     break;
                 }
             }
+        }
+    }
+
+    - (void) setRetinaMode:(int)mode
+    {
+        retina_on = mode;
+
+        if (clippingCursor)
+        {
+            double scale = mode ? 0.5 : 2.0;
+            cursorClipRect.origin.x *= scale;
+            cursorClipRect.origin.y *= scale;
+            cursorClipRect.size.width *= scale;
+            cursorClipRect.size.height *= scale;
+        }
+
+        for (WineWindow* window in [NSApp windows])
+        {
+            if ([window isKindOfClass:[WineWindow class]])
+                [window setRetinaMode:mode];
         }
     }
 
@@ -2491,7 +2604,7 @@ int macdrv_get_cursor_position(CGPoint *pos)
     OnMainThread(^{
         NSPoint location = [NSEvent mouseLocation];
         location = [[WineApplicationController sharedController] flippedMouseLocation:location];
-        *pos = NSPointToCGPoint(location);
+        *pos = cgpoint_win_from_mac(NSPointToCGPoint(location));
     });
 
     return TRUE;
@@ -2508,7 +2621,7 @@ int macdrv_set_cursor_position(CGPoint pos)
     __block int ret;
 
     OnMainThread(^{
-        ret = [[WineApplicationController sharedController] setCursorPosition:pos];
+        ret = [[WineApplicationController sharedController] setCursorPosition:cgpoint_mac_from_win(pos)];
     });
 
     return ret;
@@ -2521,13 +2634,17 @@ int macdrv_set_cursor_position(CGPoint pos)
  * to or larger than the whole desktop region, the cursor is unclipped.
  * Returns zero on failure, non-zero on success.
  */
-int macdrv_clip_cursor(CGRect rect)
+int macdrv_clip_cursor(CGRect r)
 {
     __block int ret;
 
     OnMainThread(^{
         WineApplicationController* controller = [WineApplicationController sharedController];
         BOOL clipping = FALSE;
+        CGRect rect = r;
+
+        if (!CGRectIsInfinite(rect))
+            rect = cgrect_mac_from_win(rect);
 
         if (!CGRectIsInfinite(rect))
         {
@@ -2565,12 +2682,21 @@ int macdrv_clip_cursor(CGRect rect)
  * color depths from the icon resource.  If images is NULL or empty,
  * restores the default application image.
  */
-void macdrv_set_application_icon(CFArrayRef images)
+void macdrv_set_application_icon(CFArrayRef images, CFURLRef urlRef)
 {
     NSArray* imageArray = (NSArray*)images;
+    NSURL* url = (NSURL*)urlRef;
 
     OnMainThreadAsync(^{
-        [[WineApplicationController sharedController] setApplicationIconFromCGImageArray:imageArray];
+        // CrossOver Hack 13440: Get the icon from the passed-in URL if no images
+        WineApplicationController* controller = [WineApplicationController sharedController];
+        NSImage* image = nil;
+        if (!imageArray && url)
+            image = [[[NSImage alloc] initWithContentsOfURL:url] autorelease];
+        if (imageArray || ![image isValid])
+            [controller setApplicationIconFromCGImageArray:imageArray];
+        else
+            controller.applicationIcon = image;
     });
 }
 
@@ -2670,4 +2796,11 @@ int macdrv_select_input_source(TISInputSourceRef input_source)
     });
 
     return ret;
+}
+
+void macdrv_set_cocoa_retina_mode(int new_mode)
+{
+    OnMainThread(^{
+        [[WineApplicationController sharedController] setRetinaMode:new_mode];
+    });
 }

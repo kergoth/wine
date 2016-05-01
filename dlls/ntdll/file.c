@@ -245,6 +245,26 @@ static NTSTATUS FILE_CreateFile( PHANDLE handle, ACCESS_MASK access, POBJECT_ATT
             *handle = wine_server_ptr_handle( reply->handle );
         }
         SERVER_END_REQ;
+
+        /* BEGIN CODEWEAVERS HACK */
+        if (created)
+        {
+            static const char wininit[] = "WinInit.Ini", sc[] = { ';',';' };
+
+            if (unix_name.Length >= sizeof(wininit)-1 &&
+                !strcmp( unix_name.Buffer + unix_name.Length - (sizeof(wininit)-1), wininit ))
+            {
+                int fd;
+                if (wine_server_handle_to_fd( *handle, FILE_WRITE_DATA, &fd, NULL ) == STATUS_SUCCESS)
+                {
+                    struct stat st;
+                    if (fstat( fd, &st ) != -1 && st.st_size == 0) pwrite( fd, sc, sizeof(sc), 0 );
+                    wine_server_release_fd( *handle, fd );
+                }
+            }
+        }
+        /* END CODEWEAVERS HACK */
+
         NTDLL_free_struct_sd( sd );
         RtlFreeAnsiString( &unix_name );
     }

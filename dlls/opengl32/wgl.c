@@ -45,6 +45,18 @@ WINE_DECLARE_DEBUG_CHANNEL(fps);
 
 extern struct opengl_funcs null_opengl_funcs;
 
+/*
+ * Get a config key from either the app-specific or the default config
+ */
+
+inline static DWORD get_config_key( HKEY defkey, HKEY appkey, const char *name,
+                                    char *buffer, DWORD *size )
+{
+    if (appkey && !RegQueryValueExA( appkey, name, 0, NULL, (LPBYTE)buffer, size )) return 0;
+    if (defkey && !RegQueryValueExA( defkey, name, 0, NULL, (LPBYTE)buffer, size )) return 0;
+    return ERROR_FILE_NOT_FOUND;
+}
+
 /* handle management */
 
 #define MAX_WGL_HANDLES 1024
@@ -1867,19 +1879,41 @@ static BOOL filter_extensions(const char *extensions, GLubyte **exts_list, GLuin
 
     if (!disabled)
     {
-        HKEY hkey;
         DWORD size;
         char *str = NULL;
+        HKEY hkey = 0;
+        HKEY appkey = 0;
+        char buffer[MAX_PATH+10];
 
-        /* @@ Wine registry key: HKCU\Software\Wine\OpenGL */
-        if (!RegOpenKeyA( HKEY_CURRENT_USER, "Software\\Wine\\OpenGL", &hkey ))
+        /* @@ Wine registry key: HKLM\Software\Wine\OpenGL */
+        if (RegOpenKeyA( HKEY_CURRENT_USER, "Software\\Wine\\OpenGL", &hkey)) hkey = 0;
+        size = GetModuleFileNameA( 0, buffer, MAX_PATH );
+        if (size && size < MAX_PATH)
         {
-            if (!RegQueryValueExA( hkey, "DisabledExtensions", 0, NULL, NULL, &size ))
+            HKEY tmpkey;
+            /* @@ Wine registry key: HKCU\Software\Wine\AppDefaults\app.exe\OpenGL */
+            if (!RegOpenKeyA( HKEY_CURRENT_USER, "Software\\Wine\\AppDefaults", &tmpkey ))
             {
-                str = HeapAlloc( GetProcessHeap(), 0, size );
-                if (RegQueryValueExA( hkey, "DisabledExtensions", 0, NULL, (BYTE *)str, &size )) *str = 0;
+                char *p, *appname = buffer;
+                if ((p = strrchr( appname, '/' ))) appname = p + 1;
+                if ((p = strrchr( appname, '\\' ))) appname = p + 1;
+                strcat( appname, "\\OpenGL" );
+                TRACE("appname = [%s]\n", appname);
+                if (RegOpenKeyA( tmpkey, appname, &appkey )) appkey = 0;
+                RegCloseKey( tmpkey );
             }
-            RegCloseKey( hkey );
+        }
+
+        if (hkey || appkey)
+        {
+            if (!get_config_key( hkey, appkey, "DisabledExtensions", NULL, &size))
+            {
+                str = HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, size);
+                get_config_key( hkey, appkey, "DisabledExtensions", str, &size);
+                TRACE("found DisabledExtensions=%s\n", debugstr_a(str));
+            }
+            if (appkey) RegCloseKey( appkey );
+            if (hkey) RegCloseKey( hkey );
         }
         if (str)
         {

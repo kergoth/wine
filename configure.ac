@@ -43,6 +43,7 @@ AC_ARG_WITH(cups,      AS_HELP_STRING([--without-cups],[do not use CUPS]))
 AC_ARG_WITH(curses,    AS_HELP_STRING([--without-curses],[do not use (n)curses]),
             [if test "x$withval" = "xno"; then ac_cv_header_ncurses_h=no; ac_cv_header_curses_h=no; fi])
 AC_ARG_WITH(dbus,      AS_HELP_STRING([--without-dbus],[do not use DBus (dynamic device support)]))
+AC_ARG_WITH(egl,       AS_HELP_STRING([--without-egl],[do not use the EGL library]))
 AC_ARG_WITH(fontconfig,AS_HELP_STRING([--without-fontconfig],[do not use fontconfig]))
 AC_ARG_WITH(freetype,  AS_HELP_STRING([--without-freetype],[do not use the FreeType library]))
 AC_ARG_WITH(gettext,   AS_HELP_STRING([--without-gettext],[do not use gettext]))
@@ -513,6 +514,7 @@ AC_CHECK_HEADERS(\
 	sys/wait.h \
 	syscall.h \
 	termios.h \
+	txc_dxtn.h \
 	unistd.h \
 	utime.h \
 	valgrind/memcheck.h \
@@ -902,6 +904,15 @@ case $host_os in
       WINE_TRY_CFLAGS([-Wl,--enable-new-dtags],
                       [LDRPATH_INSTALL="$LDRPATH_INSTALL -Wl,--enable-new-dtags"])
 
+      AC_CACHE_CHECK([whether gcc accepts -static-libgcc], ac_cv_c_dll_static_libgcc,
+        [WINE_TRY_CFLAGS([-shared -static-libgcc],
+                         ac_cv_c_dll_static_libgcc="yes",ac_cv_c_dll_static_libgcc="no")])
+      if test "$ac_cv_c_dll_static_libgcc" = "yes"
+      then
+        LDSHARED="$LDSHARED -static-libgcc"
+        LDDLLFLAGS="$LDDLLFLAGS -static-libgcc"
+      fi
+
       case $host_cpu in
         *i[[3456789]]86* | x86_64)
           WINE_TRY_CFLAGS([-Wl,--section-start,.interp=0x7bf00400],
@@ -938,7 +949,6 @@ esac
 enable_winecoreaudio_drv=${enable_winecoreaudio_drv:-no}
 enable_wineqtdecoder=${enable_wineqtdecoder:-no}
 enable_winemac_drv=${enable_winemac_drv:-no}
-test "$ac_cv_header_linux_joystick_h" = "yes" -o "$ac_cv_header_IOKit_hid_IOHIDLib_h" = "yes" || enable_winejoystick_drv=${enable_winejoystick_drv:-no}
 
 dnl Check for cross compiler to build test programs
 AC_SUBST(CROSSTARGET,"")
@@ -1141,10 +1151,26 @@ This probably prevents linking to OpenGL. Try deleting the file and restarting c
 		     $X_LIBS -lm $X_EXTRA_LIBS)
         if test "x$with_glu" != "xno"
         then
-            AC_CHECK_LIB(GLU,gluLookAt,[:],,[$OPENGL_LIBS $X_LIBS -lm $X_EXTRA_LIBS])
-            WINE_NOTICE_WITH(glu,[test "x$ac_cv_lib_GLU_gluLookAt" != xyes],
+            dnl *** CrossOver Hack 10798 ***
+            WINE_CHECK_SONAME(GLU,gluLookAt,,,[$OPENGL_LIBS $X_LIBS -lm $X_EXTRA_LIBS])
+            WINE_NOTICE_WITH(glu,[test "x$ac_cv_lib_soname_GLU" = "x"],
                              [libGLU ${notice_platform}development files not found, GLU won't be supported.])
         fi
+
+        if test "x$with_egl" != "xno"
+        then
+            AC_CHECK_HEADERS(EGL/egl.h EGL/eglext.h,,,
+[#ifdef HAVE_EGL_EGL_H
+# include <EGL/egl.h>
+#endif])
+            if test "$ac_cv_header_EGL_egl_h" = "yes" -a "$ac_cv_header_EGL_eglext_h" = "yes"
+            then
+#                AC_CHECK_LIB(EGL,eglCreateContext,[:],,[$OPENGL_LIBS $X_LIBS $X_PRE_LIBS $XLIB -lm $X_EXTRA_LIBS])
+                WINE_CHECK_SONAME(EGL,eglCreateContext,,,[$OPENGL_LIBS $X_LIBS $X_PRE_LIBS $XLIB -lm $X_EXTRA_LIBS])
+            fi
+        fi
+        WINE_NOTICE_WITH(egl,[test "x$ac_cv_lib_soname_EGL" = "x"],
+                         [libEGL ${notice_platform}development files not found, EGL won't be supported.])
 
         if test "x$with_osmesa" != "xno"
         then
@@ -1166,7 +1192,8 @@ WINE_ERROR_WITH(x,[test "x$X_LIBS" = "x"],[X ${notice_platform}development files
 without X support, which probably isn't what you want. You will need
 to install ${notice_platform}development packages of Xlib/Xfree86 at the very least.])
 
-test "x$ac_cv_lib_GLU_gluLookAt" != xyes && enable_glu32=${enable_glu32:-no}
+dnl *** CrossOver Hack 10798 ***
+test "x$ac_cv_lib_soname_GLU" = "x" && enable_glu32=${enable_glu32:-no}
 
 dnl **** Check for OpenCL ****
 if test "$ac_cv_header_CL_cl_h" = "yes"
@@ -1688,6 +1715,19 @@ then
     WINE_CHECK_SONAME(netapi,libnetapi_init,,[AC_DEFINE_UNQUOTED(SONAME_LIBNETAPI,["libnetapi.$LIBEXT"])])
 fi
 
+dnl **** Check for libtxc_dxtn ****
+if test "x$with_txc_dxtn" != "xno"
+then
+    if test "$ac_cv_header_txc_dxtn_h" = "yes"
+    then
+        WINE_CHECK_SONAME(txc_dxtn,fetch_2d_texel_rgba_dxt5)
+        AC_CHECK_LIB(txc_dxtn,fetch_2d_texel_rgba_dxt5,
+                  [AC_SUBST(LIBTXC_DXTN,"-ltxc_dxtn")])
+    fi
+fi
+WINE_NOTICE_WITH(txc_dxtn,[test "x$ac_cv_lib_txc_dxtn_fetch_2d_texel_rgba_dxt5" != xyes],
+                 [libtxc_dxtn ${notice_platform}development files not found, S3TC fallback won't be supported.])
+
 dnl **** Check for any sound system ****
 if test "x$enable_winealsa_drv$enable_winecoreaudio_drv$enable_winepulse_drv$enable_wineoss_drv" = xnononono -a \
         "x$with_alsa$with_coreaudio$with_oss$with_pulse" != xnononono
@@ -2065,6 +2105,13 @@ dnl Check for clock_gettime which may be in -lrt
 ac_save_LIBS=$LIBS
 AC_SEARCH_LIBS(clock_gettime, rt,
                [AC_DEFINE(HAVE_CLOCK_GETTIME, 1, [Define to 1 if you have the `clock_gettime' function.])
+                test "$ac_res" = "none required" || AC_SUBST(RT_LIBS,"$ac_res")])
+LIBS=$ac_save_LIBS
+
+dnl Check for shm_open which may be in -lrt
+ac_save_LIBS=$LIBS
+AC_SEARCH_LIBS(shm_open, rt,
+               [AC_DEFINE(HAVE_SHM_OPEN, 1, [Define to 1 if you have the `shm_open' function.])
                 test "$ac_res" = "none required" || AC_SUBST(RT_LIBS,"$ac_res")])
 LIBS=$ac_save_LIBS
 
@@ -2588,6 +2635,7 @@ WINE_CONFIG_SYMLINK(po,po,[LINGUAS])
 WINE_CONFIG_SYMLINK(,tools,[wine],,winewrapper)
 WINE_CONFIG_SYMLINK(,tools,[wine64],enable_win64,winewrapper)
 
+WINE_CONFIG_DLL(32autole)
 WINE_CONFIG_DLL(acledit)
 WINE_CONFIG_DLL(aclui,,[implib])
 WINE_CONFIG_DLL(activeds,,[implib])
@@ -2922,6 +2970,8 @@ WINE_CONFIG_DLL(iccvid,,[po])
 WINE_CONFIG_DLL(icmp)
 WINE_CONFIG_DLL(ieframe,,[clean,implib,po])
 WINE_CONFIG_TEST(dlls/ieframe/tests)
+WINE_CONFIG_DLL(ieinfo5.ocx)
+WINE_CONFIG_DLL(iernonce)
 WINE_CONFIG_DLL(ifsmgr.vxd,enable_win16)
 WINE_CONFIG_DLL(imaadp32.acm)
 WINE_CONFIG_DLL(imagehlp,,[implib])

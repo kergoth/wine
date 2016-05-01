@@ -2251,6 +2251,28 @@ static INT AddFontToList(const char *file, void *font_data_ptr, DWORD font_data_
             return 0;
         }
 
+        /* CROSSOVER HACK - bug 4862 */
+        if(!strcmp(ft_face->family_name, "AR PL ZenKai Uni") || !strcmp(ft_face->family_name, "Samyak Oriya"))
+        {
+            /* These fonts (ukai.ttf, samyak-oriya.ttf) cause native gdiplus to crash */
+            TRACE("Skipping %s\n", ft_face->family_name);
+            pFT_Done_Face(ft_face);
+            return 0;
+        }
+
+        /* Ignore Apple's Symbol font */
+        if(!strcasecmp( ft_face->family_name, "symbol" ) && FT_IS_SFNT( ft_face ))
+        {
+            FONTSIGNATURE fs;
+            get_fontsig( ft_face, &fs );
+            if(!(fs.fsCsb[0] & 0x80000000))
+            {
+                TRACE( "Skipping Apple's Symbol font\n" );
+                pFT_Done_Face( ft_face );
+                return 0;
+            }
+        }
+
         AddFaceToList(ft_face, file, font_data_ptr, font_data_size, face_index, flags);
         ++ret;
 
@@ -2351,6 +2373,60 @@ static void LoadReplaceList(void)
     LPWSTR value;
     LPVOID data;
 
+/* CROSSOVER HACK - bug 13095 and 13610 */
+    static const WCHAR atSimSun[] = {'@','S','i','m','S','u','n',0};
+    static const WCHAR NSimSun[] = {'N','S','i','m','S','u','n',0};
+    static const WCHAR atNSimSun[] = {'@','N','S','i','m','S','u','n',0};
+    static const WCHAR SongTi[] = {0x5b8b,0x4f53,0};
+    static const WCHAR atSongTi[] = {'@',0x5b8b,0x4f53,0};
+    static const WCHAR XinSongTi[] = {0x65B0,0x5b8b,0x4f53,0};
+    static const WCHAR atXinSongTi[] = {'@',0x65B0,0x5b8b,0x4f53,0};
+    static const WCHAR *cn_font_replacement[] = {
+        SimSun,
+        NSimSun,
+        SongTi,
+        XinSongTi,
+        atSimSun,
+        atNSimSun,
+        atSongTi,
+        atXinSongTi
+    };
+    int replacement_count = sizeof(cn_font_replacement)/sizeof(cn_font_replacement[0]);
+    BOOL *cn_font_seen = HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, replacement_count * sizeof(BOOL));
+#ifdef __APPLE__
+    static const WCHAR STSong[] = {'S','T','S','o','n','g',0};
+    static const WCHAR atSTSong[] = {'@','S','T','S','o','n','g',0};
+    static const WCHAR new_cn_font[] = {
+        'H','i','r','a','g','i','n','o',' ','S','a','n','s',' ','G','B',' ','W','3',0,
+        'S','T','S','o','n','g',0,
+        0
+    };
+    static const WCHAR vertical_new_cn_font[] = {
+        '@','H','i','r','a','g','i','n','o',' ','S','a','n','s',' ','G','B',' ','W','3',0,
+        '@','S','T','S','o','n','g',0,
+        0
+    };
+#else
+    static const WCHAR new_cn_font[] = {
+        /* WenQuanYi Micro Hei - popular open source Simplified Chinese font */
+        'W','e','n','Q','u','a','n','Y','i',' ','M','i','c','r','o',' ','H','e','i',0,
+        /* Droid Sans Fallback - Ubuntu's defualt Simplified Chinese font */
+        'D','r','o','i','d',' ','S','a','n','s',' ','F','a','l','l','b','a','c','k',0,
+        /* Source Han Sans CN - Fedora's defualt Simplified Chinese font */
+        'S','o','u','r','c','e',' ','H','a','n',' ','S','a','n','s',' ','C','N',' ','R','e','g','u','l','a','r',0,
+        0
+    };
+    static const WCHAR vertical_new_cn_font[] = {
+        /* WenQuanYi Micro Hei - popular open source Simplified Chinese font */
+        '@','W','e','n','Q','u','a','n','Y','i',' ','M','i','c','r','o',' ','H','e','i',0,
+        /* Droid Sans Fallback - Ubuntu's defualt Simplified Chinese font */
+        '@','D','r','o','i','d',' ','S','a','n','s',' ','F','a','l','l','b','a','c','k',0,
+        /* Source Han Sans CN - Fedora's defualt Simplified Chinese font */
+        '@','S','o','u','r','c','e',' ','H','a','n',' ','S','a','n','s',' ','C','N',' ','R','e','g','u','l','a','r',0,
+        0
+    };
+#endif
+
     /* @@ Wine registry key: HKCU\Software\Wine\Fonts\Replacements */
     if(RegOpenKeyA(HKEY_CURRENT_USER, "Software\\Wine\\Fonts\\Replacements", &hkey) == ERROR_SUCCESS)
     {
@@ -2368,9 +2444,31 @@ static void LoadReplaceList(void)
             /* "NewName"="Oldname" */
             if(!find_family_from_any_name(value))
             {
+                const WCHAR *replace = data;
+
+/* CROSSOVER HACK - bug 13095 and 13610 */
+                int j;
+                for (j = 0; j < replacement_count; j++)
+                {
+                    if (!cn_font_seen[j] && !lstrcmpW(value, cn_font_replacement[j]))
+                    {
+#ifdef __APPLE__
+                        BOOL is_vertical = value[0] == '@';
+                        if (type == REG_SZ && !lstrcmpW(data, is_vertical ? atSTSong : STSong))
+                        {
+                            if (is_vertical)
+                                replace = vertical_new_cn_font;
+                            else
+                                replace = new_cn_font;
+                            type = REG_MULTI_SZ;
+                        }
+#endif
+                        cn_font_seen[j] = TRUE;
+                        break;
+                    }
+                }
                 if (type == REG_MULTI_SZ)
                 {
-                    WCHAR *replace = data;
                     while(*replace)
                     {
                         if (map_font_family(value, replace))
@@ -2388,10 +2486,29 @@ static void LoadReplaceList(void)
 	    dlen = datalen;
 	    vlen = valuelen;
 	}
+/* CROSSOVER HACK - bug 13095 and 13610 */
+        for (i = 0; i < replacement_count; i++)
+        {
+            if (!cn_font_seen[i] && !find_family_from_any_name(cn_font_replacement[i]))
+            {
+                const WCHAR *replace;
+                if (cn_font_replacement[i][0] == '@')
+                    replace = vertical_new_cn_font;
+                else
+                    replace = new_cn_font;
+                while (*replace)
+                {
+                    if (map_font_family(cn_font_replacement[i], replace))
+                        break;
+                    replace += strlenW(replace) + 1;
+                }
+            }
+        }
 	HeapFree(GetProcessHeap(), 0, data);
 	HeapFree(GetProcessHeap(), 0, value);
 	RegCloseKey(hkey);
     }
+    HeapFree(GetProcessHeap(), 0, cn_font_seen);
 }
 
 static const WCHAR *font_links_list[] =
@@ -2798,8 +2915,12 @@ static void load_fontconfig_fonts(void)
     int i, len;
     char *file;
     const char *ext;
+    static const WCHAR cx_hack_var[] = {'C','X','_','S','K','I','P','_','F','O','N','T','C','O','N','F','I','G','_',
+                                        'F','O','N','T','S',0};
+    WCHAR env_buf[20];
 
     if (!fontconfig_enabled) return;
+    if(GetEnvironmentVariableW(cx_hack_var, env_buf, sizeof(env_buf)/sizeof(WCHAR))) return;
 
     pat = pFcPatternCreate();
     os = pFcObjectSetCreate();
@@ -4038,7 +4159,16 @@ static void update_font_info(void)
 
 static BOOL init_freetype(void)
 {
-    ft_handle = wine_dlopen(SONAME_LIBFREETYPE, RTLD_NOW, NULL, 0);
+    const char *ftname = "libcxfreetype.so";
+
+    TRACE("Trying freetype library %s (hard-coded)\n",ftname);
+    ft_handle = wine_dlopen(ftname, RTLD_NOW, NULL, 0);
+
+    if(!ft_handle) {
+        TRACE("Can't find freetype library %s, trying %s instead\n", ftname, SONAME_LIBFREETYPE);
+        ft_handle = wine_dlopen(SONAME_LIBFREETYPE, RTLD_NOW, NULL, 0);
+    }
+
     if(!ft_handle) {
         WINE_MESSAGE(
       "Wine cannot find the FreeType font library.  To enable Wine to\n"
@@ -4293,6 +4423,9 @@ static void reorder_font_list(void)
  */
 BOOL WineEngInit(void)
 {
+    static const WCHAR cx_hack_var[] = {'C','X','_','T','U','R','N','_','O','F','F','_','F','O','N','T','_',
+                                        'R','E','P','L','A','C','E','M','E','N','T','S',0};
+    WCHAR env_buf[20];
     HKEY hkey;
     DWORD disposition;
     HANDLE font_mutex;
@@ -4342,7 +4475,9 @@ BOOL WineEngInit(void)
     DumpFontList();
     LoadSubstList();
     DumpSubstList();
-    LoadReplaceList();
+
+    if(!GetEnvironmentVariableW(cx_hack_var, env_buf, sizeof(env_buf)/sizeof(WCHAR)))
+        LoadReplaceList();
 
     if(disposition == REG_CREATED_NEW_KEY)
         update_reg_entries();
@@ -6038,6 +6173,43 @@ static BOOL freetype_EnumFonts( PHYSDEV dev, LPLOGFONTW plf, FONTENUMPROCW proc,
     LOGFONTW lf;
     struct enum_charset_list enum_charsets;
 
+    /* for the photoshop japanese font hack */
+    char name[MAX_PATH], *p;
+    INT blockNum=0;
+    static const CHAR BLOCK_LIST[][MAX_PATH] = {
+"/System/Library/Fonts/\xe3\x83\x92\xe3\x83\xa9\xe3\x82\xad\xe3\x82\x99\xe3\x83\x8e\xe8\xa7\x92\xe3\x82\xb3\xe3\x82\x99 Std W8.otf",
+"/System/Library/Fonts/\xe3\x83\x92\xe3\x83\xa9\xe3\x82\xad\xe3\x82\x99\xe3\x83\x8e\xe6\x98\x8e\xe6\x9c\x9d Pro W3.otf",
+"/System/Library/Fonts/\xe3\x83\x92\xe3\x83\xa9\xe3\x82\xad\xe3\x82\x99\xe3\x83\x8e\xe8\xa7\x92\xe3\x82\xb3\xe3\x82\x99 Pro W3.otf",
+"/System/Library/Fonts/\xe3\x83\x92\xe3\x83\xa9\xe3\x82\xad\xe3\x82\x99\xe3\x83\x8e\xe6\x98\x8e\xe6\x9c\x9d Pro W6.otf",
+"/System/Library/Fonts/\xe3\x83\x92\xe3\x83\xa9\xe3\x82\xad\xe3\x82\x99\xe3\x83\x8e\xe8\xa7\x92\xe3\x82\xb3\xe3\x82\x99 Pro W6.otf",
+"/System/Library/Fonts/\xe3\x83\x92\xe3\x83\xa9\xe3\x82\xad\xe3\x82\x99\xe3\x83\x8e\xe4\xb8\xb8\xe3\x82\xb3\xe3\x82\x99 Pro W4.otf",
+/* for Leopard new fonts and things moved */
+"/System/Library/Fonts/\xe3\x83\x92\xe3\x83\xa9\xe3\x82\xad\xe3\x82\x99\xe3\x83\x8e\xe6\x98\x8e\xe6\x9c\x9d ProN W3.otf",
+"/System/Library/Fonts/\xe3\x83\x92\xe3\x83\xa9\xe3\x82\xad\xe3\x82\x99\xe3\x83\x8e\xe8\xa7\x92\xe3\x82\xb3\xe3\x82\x99 ProN W3.otf",
+"/System/Library/Fonts/\xe3\x83\x92\xe3\x83\xa9\xe3\x82\xad\xe3\x82\x99\xe3\x83\x8e\xe6\x98\x8e\xe6\x9c\x9d ProN W6.otf",
+"/System/Library/Fonts/\xe3\x83\x92\xe3\x83\xa9\xe3\x82\xad\xe3\x82\x99\xe3\x83\x8e\xe8\xa7\x92\xe3\x82\xb3\xe3\x82\x99 ProN W6.otf",
+"/Library/Fonts/\xe3\x83\x92\xe3\x83\xa9\xe3\x82\xad\xe3\x82\x99\xe3\x83\x8e\xe8\xa7\x92\xe3\x82\xb3\xe3\x82\x99 StdN W8.otf",
+"/Library/Fonts/\xe3\x83\x92\xe3\x83\xa9\xe3\x82\xad\xe3\x82\x99\xe3\x83\x8e\xe8\xa7\x92\xe3\x82\xb3\xe3\x82\x99 Std W8.otf",
+"/Library/Fonts/\xe3\x83\x92\xe3\x83\xa9\xe3\x82\xad\xe3\x82\x99\xe3\x83\x8e\xe6\x98\x8e\xe6\x9c\x9d Pro W3.otf",
+"/Library/Fonts/\xe3\x83\x92\xe3\x83\xa9\xe3\x82\xad\xe3\x82\x99\xe3\x83\x8e\xe8\xa7\x92\xe3\x82\xb3\xe3\x82\x99 Pro W3.otf",
+"/Library/Fonts/\xe3\x83\x92\xe3\x83\xa9\xe3\x82\xad\xe3\x82\x99\xe3\x83\x8e\xe6\x98\x8e\xe6\x9c\x9d Pro W6.otf",
+"/Library/Fonts/\xe3\x83\x92\xe3\x83\xa9\xe3\x82\xad\xe3\x82\x99\xe3\x83\x8e\xe8\xa7\x92\xe3\x82\xb3\xe3\x82\x99 Pro W6.otf",
+"/Library/Fonts/\xe3\x83\x92\xe3\x83\xa9\xe3\x82\xad\xe3\x82\x99\xe3\x83\x8e\xe4\xb8\xb8\xe3\x82\xb3\xe3\x82\x99 Pro W4.otf",
+"/Library/Fonts/\xe3\x83\x92\xe3\x83\xa9\xe3\x82\xad\xe3\x82\x99\xe3\x83\x8e\xe4\xb8\xb8\xe3\x82\xb3\xe3\x82\x99 ProN W4.otf"
+    };
+
+    GetModuleFileNameA(GetModuleHandleA(NULL),name,MAX_PATH);
+    p = strrchr(name,'\\');
+    if (p)
+        p++;
+    else
+        p = name;
+    if ((strcasecmp(p,"photoshop.exe")==0) ||
+        (strcasecmp(p,"imageready.exe")==0))
+        blockNum = 18;
+    else
+        blockNum = 0;
+
     if (!plf)
     {
         lf.lfCharSet = DEFAULT_CHARSET;
@@ -6067,6 +6239,24 @@ static BOOL freetype_EnumFonts( PHYSDEV dev, LPLOGFONTW plf, FONTENUMPROCW proc,
             face_list = get_face_list_from_family(family);
             LIST_FOR_EACH_ENTRY( face, face_list, Face, entry ) {
                 if (!face_matches(family->FamilyName, face, face_name)) continue;
+                if (blockNum>0)
+                {
+                    int i = 0;
+                    BOOL blocked = FALSE;
+                    char *file = strWtoA( CP_UNIXCP, face->file );
+                    for ( i = 0; i < blockNum; i++)
+                        if (lstrcmpA(file,BLOCK_LIST[i])==0)
+                        {
+                            blocked = TRUE;
+                            break;
+                        }
+                    HeapFree( GetProcessHeap(), 0, file );
+                    if (blocked)
+                    {
+                        TRACE("Blocked for Photoshop\n");
+                        continue;
+                    }
+                }
                 if (!enum_face_charsets(family, face, &enum_charsets, proc, lparam, psub ? psub->from.name : NULL)) return FALSE;
 	    }
 	}
@@ -6074,6 +6264,24 @@ static BOOL freetype_EnumFonts( PHYSDEV dev, LPLOGFONTW plf, FONTENUMPROCW proc,
         LIST_FOR_EACH_ENTRY( family, &font_list, Family, entry ) {
             face_list = get_face_list_from_family(family);
             face = LIST_ENTRY(list_head(face_list), Face, entry);
+            if (blockNum>0)
+            {
+                int i = 0;
+                BOOL blocked = FALSE;
+                char *file = strWtoA( CP_UNIXCP, face->file );
+                for ( i = 0; i < blockNum; i++)
+                    if (lstrcmpA(file,BLOCK_LIST[i])==0)
+                    {
+                        blocked = TRUE;
+                        break;
+                    }
+                HeapFree( GetProcessHeap(), 0, file );
+                if (blocked)
+                {
+                    TRACE("Blocked for Photoshop\n");
+                    continue;
+                }
+            }
             if (!enum_face_charsets(family, face, &enum_charsets, proc, lparam, NULL)) return FALSE;
 	}
     }
@@ -7074,6 +7282,33 @@ static DWORD get_glyph_outline(GdiFont *incoming_font, UINT glyph, UINT format,
       {
 	unsigned int max_level, row, col;
 	BYTE *start, *ptr;
+
+        /****************** CodeWeavers hack to fix HL2 crash **************************
+         *
+         * Both glyphs 0x2e and 0x39 of this font get rendered to a larger
+         * size with FreeType than under Windows, and HL2 uses a fixed size
+         * buffer on the stack to copy the data into.  For now we'll clip glyphs
+         * from that font into a rather smaller BBox
+         *
+         ******************************************************************************/
+        if(!strcmp(ft_face->family_name, "HL2MP") ||
+           !strcmp(ft_face->family_name, "csd"))
+        {
+            int i;
+            if(width) width--;
+ 
+            for(i = 0; i < 2; i++)
+            {
+                if(height)
+                {
+                    height--;
+                    lpgm->gmptGlyphOrigin.y--;
+                }
+            }
+            gm.gmBlackBoxX = width  ? width  : 1;
+            gm.gmBlackBoxY = height ? height : 1;
+        }
+        /*********************************** End CW's hack ****************************/
 
 	pitch = (width + 3) / 4 * 4;
 	needed = pitch * height;

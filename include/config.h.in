@@ -105,6 +105,12 @@
 /* Define to 1 if you have the `dlopen' function. */
 #undef HAVE_DLOPEN
 
+/* Define to 1 if you have the <EGL/eglext.h> header file. */
+#undef HAVE_EGL_EGLEXT_H
+
+/* Define to 1 if you have the <EGL/egl.h> header file. */
+#undef HAVE_EGL_EGL_H
+
 /* Define to 1 if you have the <elf.h> header file. */
 #undef HAVE_ELF_H
 
@@ -774,6 +780,9 @@
 /* Define to 1 if you have the `settimeofday' function. */
 #undef HAVE_SETTIMEOFDAY
 
+/* Define to 1 if you have the `shm_open' function. */
+#undef HAVE_SHM_OPEN
+
 /* Define to 1 if `interface_id' is a member of `sg_io_hdr_t'. */
 #undef HAVE_SG_IO_HDR_T_INTERFACE_ID
 
@@ -1164,6 +1173,9 @@
 /* Define to 1 if you have the `truncf' function. */
 #undef HAVE_TRUNCF
 
+/* Define to 1 if you have the <txc_dxtn.h> header file. */
+#undef HAVE_TXC_DXTN_H
+
 /* Define to 1 if you have the <unistd.h> header file. */
 #undef HAVE_UNISTD_H
 
@@ -1341,6 +1353,9 @@
 /* Define to the soname of the libdbus-1 library. */
 #undef SONAME_LIBDBUS_1
 
+/* Define to the soname of the libEGL library. */
+#undef SONAME_LIBEGL
+
 /* Define to the soname of the libfontconfig library. */
 #undef SONAME_LIBFONTCONFIG
 
@@ -1349,6 +1364,9 @@
 
 /* Define to the soname of the libGL library. */
 #undef SONAME_LIBGL
+
+/* Define to the soname of the libGLU library. CrossOver Hack 10798 */
+#undef SONAME_LIBGLU
 
 /* Define to the soname of the libgnutls library. */
 #undef SONAME_LIBGNUTLS
@@ -1385,6 +1403,9 @@
 
 /* Define to the soname of the libtiff library. */
 #undef SONAME_LIBTIFF
+
+/* Define to the soname of the libtxc_dxtn library. */
+#undef SONAME_LIBTXC_DXTN
 
 /* Define to the soname of the libv4l1 library. */
 #undef SONAME_LIBV4L1

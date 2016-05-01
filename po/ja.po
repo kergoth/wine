@@ -390,8 +390,8 @@ msgctxt "hotkey"
 msgid "None"
 msgstr "なし"
 
-#: comctl32.rc:31 cryptui.rc:230 regedit.rc:237 taskmgr.rc:434 winedbg.rc:60
-#: winedbg.rc:75 wordpad.rc:172
+#: comctl32.rc:31 cryptui.rc:230 regedit.rc:237 taskmgr.rc:434 winedbg.rc:58
+#: winedbg.rc:70 wordpad.rc:172
 msgid "Close"
 msgstr "閉じる"
 
@@ -6717,7 +6717,7 @@ msgstr "ネットワーク全体"
 msgid "Sound Selection"
 msgstr "サウンドの選択"
 
-#: msacm32.rc:39 winedbg.rc:76
+#: msacm32.rc:39 winedbg.rc:71
 msgid "&Save As..."
 msgstr "名前を付けて保存(&S)..."
 
@@ -13797,34 +13797,37 @@ msgstr ""
 "プログラム %s で重大な問題が発生したため、終了する必要があります。 ご不便をお"
 "かけし申し訳ありません。"
 
-#: winedbg.rc:58
+#: winedbg.rc:56
 msgid ""
 "This can be caused by a problem in the program or a deficiency in Wine. You "
-"may want to check the <a href=\"http://appdb.winehq.org\">Application "
-"Database</a> for tips about running this application."
+"may want to check <a href=\"http://www.codeweavers.com/compatibility/"
+"\">http://www.codeweavers.com/compatibility/</a> for tips about running this "
+"application."
 msgstr ""
 "これはプログラム内の問題や Wine の欠陥によって発生することがあります。<a "
-"href=\"http://appdb.winehq.org\">アプリケーション データベース</a>で このアプ"
-"リケーションを動作させるヒントを 確認するとよいでしょう。"
+"href=\"http://www.codeweavers.com/compatibility/\">http://www.codeweavers."
+"com/compatibility/</a>で このアプリケーションを動作させるヒントを 確認すると"
+"よいでしょう。"
 
-#: winedbg.rc:61
+#: winedbg.rc:59
 msgid "Show &Details"
 msgstr "詳細を表示(&D)"
 
-#: winedbg.rc:66
+#: winedbg.rc:64
 msgid "Program Error Details"
 msgstr "プログラム エラーの詳細"
 
-#: winedbg.rc:73
+#: winedbg.rc:68
 msgid ""
 "If this problem is not present under Windows and has not been reported yet, "
 "you can save the detailed information to a file using the \"Save As\" "
-"button, then <a href=\"http://wiki.winehq.org/Bugs\">file a bug report</a> "
-"and attach that file to the report."
+"button, then <a href=\"http://www.codeweavers.com/support/tickets/enter/"
+"\">file a bug report</a> and attach that file to the report."
 msgstr ""
 "この問題が Windows 上で発生することがなくまだ報告されていない場合は、[保存す"
-"る]ボタンを利用して詳細情報を保存した上で、 <a href=\"http://wiki.winehq.org/"
-"Bugs\">バグ レポートを作成</a>し、そのファイルをレポートに添付できます。"
+"る]ボタンを利用して詳細情報を保存した上で、 <a href=\"http://www.codeweavers."
+"com/support/tickets/enter/\">バグ レポートを作成</a>し、そのファイルをレポー"
+"トに添付できます。"
 
 #: winedbg.rc:38
 msgid "Wine program crash"

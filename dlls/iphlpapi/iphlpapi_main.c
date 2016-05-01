@@ -33,6 +33,9 @@
 #ifdef HAVE_ARPA_NAMESER_H
 # include <arpa/nameser.h>
 #endif
+#ifdef HAVE_DLFCN_H
+# include <dlfcn.h>
+#endif
 #ifdef HAVE_RESOLV_H
 # include <resolv.h>
 #endif
@@ -1295,17 +1298,29 @@ static int get_dns_servers( SOCKADDR_STORAGE *servers, int num, BOOL ip4_only )
 
 static int get_dns_servers( SOCKADDR_STORAGE *servers, int num, BOOL ip4_only )
 {
-    extern struct res_state *__res_get_state( void );
-    extern int __res_getservers( struct res_state *, struct sockaddr_storage *, int );
-    struct res_state *state = __res_get_state();
-    int i, found = 0, total = __res_getservers( state, NULL, 0 );
+    struct res_state * (*p__res_get_state)( void );
+    int (*p__res_getservers)( struct res_state *, struct sockaddr_storage *, int );
+    struct res_state *state;
+    int i, found = 0, total;
     SOCKADDR_STORAGE *addr = servers;
     struct sockaddr_storage *buf;
+
+    p__res_get_state = dlsym( RTLD_DEFAULT, "__res_get_state" );
+    p__res_getservers = dlsym( RTLD_DEFAULT, "__res_getservers" );
+
+    if (!p__res_get_state || !p__res_getservers)
+    {
+        WARN( "__res_get_state or __res_getservers functions are missing\n" );
+        return 0;
+    }
+
+    state = p__res_get_state();
+    total = p__res_getservers( state, NULL, 0 );
 
     if ((!servers || !num) && !ip4_only) return total;
 
     buf = HeapAlloc( GetProcessHeap(), 0, total * sizeof(struct sockaddr_storage) );
-    total = __res_getservers( state, buf, total );
+    total = p__res_getservers( state, buf, total );
 
     for (i = 0; i < total; i++)
     {

@@ -100,10 +100,7 @@
 #include "winternl.h"
 #include "winioctl.h"
 
-#if defined(HAVE_SYS_EPOLL_H) && defined(HAVE_EPOLL_CREATE)
-# include <sys/epoll.h>
-# define USE_EPOLL
-#elif defined(linux) && defined(__i386__) && defined(HAVE_STDINT_H)
+#if defined(linux) && defined(__i386__) && defined(HAVE_STDINT_H)
 # define USE_EPOLL
 # define EPOLLIN POLLIN
 # define EPOLLOUT POLLOUT
@@ -142,6 +139,9 @@ static inline int epoll_wait( int epfd, struct epoll_event *events, int maxevent
     return syscall( 256 /*NR_epoll_wait*/, epfd, events, maxevents, timeout );
 }
 
+#elif defined(HAVE_SYS_EPOLL_H) && defined(HAVE_EPOLL_CREATE)
+# include <sys/epoll.h>
+# define USE_EPOLL
 #endif /* linux && __i386__ && HAVE_STDINT_H */
 
 #if defined(HAVE_PORT_H) && defined(HAVE_PORT_CREATE)

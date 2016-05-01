@@ -636,6 +636,7 @@ UNWINDFLAGS
 EXCESS_PRECISION_CFLAGS
 BUILTINFLAG
 EXTRACFLAGS
+LIBTXC_DXTN
 PROCSTAT_LIBS
 KSTAT_LIBS
 MPG123_LIBS
@@ -817,6 +818,7 @@ with_coreaudio
 with_cups
 with_curses
 with_dbus
+with_egl
 with_fontconfig
 with_freetype
 with_gettext
@@ -860,6 +862,7 @@ with_wine_tools
 with_wine64
 enable_largefile
 with_x
+enable_32autole
 enable_acledit
 enable_aclui
 enable_activeds
@@ -1118,6 +1121,8 @@ enable_httpapi
 enable_iccvid
 enable_icmp
 enable_ieframe
+enable_ieinfo5_ocx
+enable_iernonce
 enable_imaadp32_acm
 enable_imagehlp
 enable_imm32
@@ -2198,6 +2203,7 @@ Optional Packages:
   --without-cups          do not use CUPS
   --without-curses        do not use (n)curses
   --without-dbus          do not use DBus (dynamic device support)
+  --without-egl           do not use the EGL library
   --without-fontconfig    do not use fontconfig
   --without-freetype      do not use the FreeType library
   --without-gettext       do not use gettext
@@ -3336,6 +3342,12 @@ fi
 # Check whether --with-dbus was given.
 if test "${with_dbus+set}" = set; then :
   withval=$with_dbus;
+fi
+
+
+# Check whether --with-egl was given.
+if test "${with_egl+set}" = set; then :
+  withval=$with_egl;
 fi
 
 
@@ -6791,6 +6803,7 @@ for ac_header in \
 	sys/wait.h \
 	syscall.h \
 	termios.h \
+	txc_dxtn.h \
 	unistd.h \
 	utime.h \
 	valgrind/memcheck.h \
@@ -8606,6 +8619,47 @@ if test "x$ac_cv_cflags__Wl___enable_new_dtags" = xyes; then :
   LDRPATH_INSTALL="$LDRPATH_INSTALL -Wl,--enable-new-dtags"
 fi
 
+      { $as_echo "$as_me:${as_lineno-$LINENO}: checking whether gcc accepts -static-libgcc" >&5
+$as_echo_n "checking whether gcc accepts -static-libgcc... " >&6; }
+if ${ac_cv_c_dll_static_libgcc+:} false; then :
+  $as_echo_n "(cached) " >&6
+else
+  { $as_echo "$as_me:${as_lineno-$LINENO}: checking whether the compiler supports -shared -static-libgcc" >&5
+$as_echo_n "checking whether the compiler supports -shared -static-libgcc... " >&6; }
+if ${ac_cv_cflags__shared__static_libgcc+:} false; then :
+  $as_echo_n "(cached) " >&6
+else
+  ac_wine_try_cflags_saved=$CFLAGS
+CFLAGS="$CFLAGS -shared -static-libgcc"
+cat confdefs.h - <<_ACEOF >conftest.$ac_ext
+/* end confdefs.h.  */
+int main(int argc, char **argv) { return 0; }
+_ACEOF
+if ac_fn_c_try_link "$LINENO"; then :
+  ac_cv_cflags__shared__static_libgcc=yes
+else
+  ac_cv_cflags__shared__static_libgcc=no
+fi
+rm -f core conftest.err conftest.$ac_objext \
+    conftest$ac_exeext conftest.$ac_ext
+CFLAGS=$ac_wine_try_cflags_saved
+fi
+{ $as_echo "$as_me:${as_lineno-$LINENO}: result: $ac_cv_cflags__shared__static_libgcc" >&5
+$as_echo "$ac_cv_cflags__shared__static_libgcc" >&6; }
+if test "x$ac_cv_cflags__shared__static_libgcc" = xyes; then :
+  ac_cv_c_dll_static_libgcc="yes"
+else
+  ac_cv_c_dll_static_libgcc="no"
+fi
+fi
+{ $as_echo "$as_me:${as_lineno-$LINENO}: result: $ac_cv_c_dll_static_libgcc" >&5
+$as_echo "$ac_cv_c_dll_static_libgcc" >&6; }
+      if test "$ac_cv_c_dll_static_libgcc" = "yes"
+      then
+        LDSHARED="$LDSHARED -static-libgcc"
+        LDDLLFLAGS="$LDDLLFLAGS -static-libgcc"
+      fi
+
       case $host_cpu in
         *i[3456789]86* | x86_64)
           { $as_echo "$as_me:${as_lineno-$LINENO}: checking whether the compiler supports -Wl,--section-start,.interp=0x7bf00400" >&5
@@ -8753,7 +8807,6 @@ esac
 enable_winecoreaudio_drv=${enable_winecoreaudio_drv:-no}
 enable_wineqtdecoder=${enable_wineqtdecoder:-no}
 enable_winemac_drv=${enable_winemac_drv:-no}
-test "$ac_cv_header_linux_joystick_h" = "yes" -o "$ac_cv_header_IOKit_hid_IOHIDLib_h" = "yes" || enable_winejoystick_drv=${enable_winejoystick_drv:-no}
 
 CROSSTARGET=""
 
@@ -10635,14 +10688,14 @@ _ACEOF
 fi
         if test "x$with_glu" != "xno"
         then
-            { $as_echo "$as_me:${as_lineno-$LINENO}: checking for gluLookAt in -lGLU" >&5
-$as_echo_n "checking for gluLookAt in -lGLU... " >&6; }
-if ${ac_cv_lib_GLU_gluLookAt+:} false; then :
+                        { $as_echo "$as_me:${as_lineno-$LINENO}: checking for -lGLU" >&5
+$as_echo_n "checking for -lGLU... " >&6; }
+if ${ac_cv_lib_soname_GLU+:} false; then :
   $as_echo_n "(cached) " >&6
 else
-  ac_check_lib_save_LIBS=$LIBS
+  ac_check_soname_save_LIBS=$LIBS
 LIBS="-lGLU $OPENGL_LIBS $X_LIBS -lm $X_EXTRA_LIBS $LIBS"
-cat confdefs.h - <<_ACEOF >conftest.$ac_ext
+  cat confdefs.h - <<_ACEOF >conftest.$ac_ext
 /* end confdefs.h.  */
 
 /* Override any GCC internal prototype to avoid an error.
@@ -10661,21 +10714,34 @@ return gluLookAt ();
 }
 _ACEOF
 if ac_fn_c_try_link "$LINENO"; then :
-  ac_cv_lib_GLU_gluLookAt=yes
-else
-  ac_cv_lib_GLU_gluLookAt=no
+  case "$LIBEXT" in
+    dll) ac_cv_lib_soname_GLU=`$ac_cv_path_LDD conftest.exe | grep "GLU" | sed -e "s/dll.*/dll/"';2,$d'` ;;
+    dylib) ac_cv_lib_soname_GLU=`$OTOOL -L conftest$ac_exeext | grep "libGLU\\.[0-9A-Za-z.]*dylib" | sed -e "s/^.*\/\(libGLU\.[0-9A-Za-z.]*dylib\).*$/\1/"';2,$d'` ;;
+    *) ac_cv_lib_soname_GLU=`$READELF -d conftest$ac_exeext | grep "NEEDED.*libGLU\\.$LIBEXT" | sed -e "s/^.*\\[\\(libGLU\\.$LIBEXT[^	 ]*\\)\\].*$/\1/"';2,$d'`
+       if ${ac_cv_lib_soname_GLU:+false} :; then :
+  ac_cv_lib_soname_GLU=`$LDD conftest$ac_exeext | grep "libGLU\\.$LIBEXT" | sed -e "s/^.*\(libGLU\.$LIBEXT[^	 ]*\).*$/\1/"';2,$d'`
+fi ;;
+  esac
 fi
 rm -f core conftest.err conftest.$ac_objext \
     conftest$ac_exeext conftest.$ac_ext
-LIBS=$ac_check_lib_save_LIBS
+  LIBS=$ac_check_soname_save_LIBS
 fi
-{ $as_echo "$as_me:${as_lineno-$LINENO}: result: $ac_cv_lib_GLU_gluLookAt" >&5
-$as_echo "$ac_cv_lib_GLU_gluLookAt" >&6; }
-if test "x$ac_cv_lib_GLU_gluLookAt" = xyes; then :
-  :
-fi
+if ${ac_cv_lib_soname_GLU:+false} :; then :
+  { $as_echo "$as_me:${as_lineno-$LINENO}: result: not found" >&5
+$as_echo "not found" >&6; }
 
-            if test "x$ac_cv_lib_GLU_gluLookAt" != xyes; then :
+else
+  { $as_echo "$as_me:${as_lineno-$LINENO}: result: $ac_cv_lib_soname_GLU" >&5
+$as_echo "$ac_cv_lib_soname_GLU" >&6; }
+
+cat >>confdefs.h <<_ACEOF
+#define SONAME_LIBGLU "$ac_cv_lib_soname_GLU"
+_ACEOF
+
+
+fi
+            if test "x$ac_cv_lib_soname_GLU" = "x"; then :
   case "x$with_glu" in
   x)   as_fn_append wine_notices "|libGLU ${notice_platform}development files not found, GLU won't be supported." ;;
   xno) ;;
@@ -10684,6 +10750,91 @@ This is an error since --with-glu was requested." "$LINENO" 5 ;;
 esac
 fi
         fi
+
+        if test "x$with_egl" != "xno"
+        then
+            for ac_header in EGL/egl.h EGL/eglext.h
+do :
+  as_ac_Header=`$as_echo "ac_cv_header_$ac_header" | $as_tr_sh`
+ac_fn_c_check_header_compile "$LINENO" "$ac_header" "$as_ac_Header" "#ifdef HAVE_EGL_EGL_H
+# include <EGL/egl.h>
+#endif
+"
+if eval test \"x\$"$as_ac_Header"\" = x"yes"; then :
+  cat >>confdefs.h <<_ACEOF
+#define `$as_echo "HAVE_$ac_header" | $as_tr_cpp` 1
+_ACEOF
+
+fi
+
+done
+
+            if test "$ac_cv_header_EGL_egl_h" = "yes" -a "$ac_cv_header_EGL_eglext_h" = "yes"
+            then
+#                AC_CHECK_LIB(EGL,eglCreateContext,[:],,[$OPENGL_LIBS $X_LIBS $X_PRE_LIBS $XLIB -lm $X_EXTRA_LIBS])
+                { $as_echo "$as_me:${as_lineno-$LINENO}: checking for -lEGL" >&5
+$as_echo_n "checking for -lEGL... " >&6; }
+if ${ac_cv_lib_soname_EGL+:} false; then :
+  $as_echo_n "(cached) " >&6
+else
+  ac_check_soname_save_LIBS=$LIBS
+LIBS="-lEGL $OPENGL_LIBS $X_LIBS $X_PRE_LIBS $XLIB -lm $X_EXTRA_LIBS $LIBS"
+  cat confdefs.h - <<_ACEOF >conftest.$ac_ext
+/* end confdefs.h.  */
+
+/* Override any GCC internal prototype to avoid an error.
+   Use char because int might match the return type of a GCC
+   builtin and then its argument prototype would still apply.  */
+#ifdef __cplusplus
+extern "C"
+#endif
+char eglCreateContext ();
+int
+main ()
+{
+return eglCreateContext ();
+  ;
+  return 0;
+}
+_ACEOF
+if ac_fn_c_try_link "$LINENO"; then :
+  case "$LIBEXT" in
+    dll) ac_cv_lib_soname_EGL=`$ac_cv_path_LDD conftest.exe | grep "EGL" | sed -e "s/dll.*/dll/"';2,$d'` ;;
+    dylib) ac_cv_lib_soname_EGL=`$OTOOL -L conftest$ac_exeext | grep "libEGL\\.[0-9A-Za-z.]*dylib" | sed -e "s/^.*\/\(libEGL\.[0-9A-Za-z.]*dylib\).*$/\1/"';2,$d'` ;;
+    *) ac_cv_lib_soname_EGL=`$READELF -d conftest$ac_exeext | grep "NEEDED.*libEGL\\.$LIBEXT" | sed -e "s/^.*\\[\\(libEGL\\.$LIBEXT[^	 ]*\\)\\].*$/\1/"';2,$d'`
+       if ${ac_cv_lib_soname_EGL:+false} :; then :
+  ac_cv_lib_soname_EGL=`$LDD conftest$ac_exeext | grep "libEGL\\.$LIBEXT" | sed -e "s/^.*\(libEGL\.$LIBEXT[^	 ]*\).*$/\1/"';2,$d'`
+fi ;;
+  esac
+fi
+rm -f core conftest.err conftest.$ac_objext \
+    conftest$ac_exeext conftest.$ac_ext
+  LIBS=$ac_check_soname_save_LIBS
+fi
+if ${ac_cv_lib_soname_EGL:+false} :; then :
+  { $as_echo "$as_me:${as_lineno-$LINENO}: result: not found" >&5
+$as_echo "not found" >&6; }
+
+else
+  { $as_echo "$as_me:${as_lineno-$LINENO}: result: $ac_cv_lib_soname_EGL" >&5
+$as_echo "$ac_cv_lib_soname_EGL" >&6; }
+
+cat >>confdefs.h <<_ACEOF
+#define SONAME_LIBEGL "$ac_cv_lib_soname_EGL"
+_ACEOF
+
+
+fi
+            fi
+        fi
+        if test "x$ac_cv_lib_soname_EGL" = "x"; then :
+  case "x$with_egl" in
+  x)   as_fn_append wine_notices "|libEGL ${notice_platform}development files not found, EGL won't be supported." ;;
+  xno) ;;
+  *)   as_fn_error $? "libEGL ${notice_platform}development files not found, EGL won't be supported.
+This is an error since --with-egl was requested." "$LINENO" 5 ;;
+esac
+fi
 
         if test "x$with_osmesa" != "xno"
         then
@@ -10777,7 +10928,7 @@ Use the --without-x option if you really want this." "$LINENO" 5 ;;
 esac
 fi
 
-test "x$ac_cv_lib_GLU_gluLookAt" != xyes && enable_glu32=${enable_glu32:-no}
+test "x$ac_cv_lib_soname_GLU" = "x" && enable_glu32=${enable_glu32:-no}
 
 if test "$ac_cv_header_CL_cl_h" = "yes"
 then
@@ -13937,6 +14088,115 @@ _ACEOF
 fi
 fi
 
+if test "x$with_txc_dxtn" != "xno"
+then
+    if test "$ac_cv_header_txc_dxtn_h" = "yes"
+    then
+        { $as_echo "$as_me:${as_lineno-$LINENO}: checking for -ltxc_dxtn" >&5
+$as_echo_n "checking for -ltxc_dxtn... " >&6; }
+if ${ac_cv_lib_soname_txc_dxtn+:} false; then :
+  $as_echo_n "(cached) " >&6
+else
+  ac_check_soname_save_LIBS=$LIBS
+LIBS="-ltxc_dxtn  $LIBS"
+  cat confdefs.h - <<_ACEOF >conftest.$ac_ext
+/* end confdefs.h.  */
+
+/* Override any GCC internal prototype to avoid an error.
+   Use char because int might match the return type of a GCC
+   builtin and then its argument prototype would still apply.  */
+#ifdef __cplusplus
+extern "C"
+#endif
+char fetch_2d_texel_rgba_dxt5 ();
+int
+main ()
+{
+return fetch_2d_texel_rgba_dxt5 ();
+  ;
+  return 0;
+}
+_ACEOF
+if ac_fn_c_try_link "$LINENO"; then :
+  case "$LIBEXT" in
+    dll) ac_cv_lib_soname_txc_dxtn=`$ac_cv_path_LDD conftest.exe | grep "txc_dxtn" | sed -e "s/dll.*/dll/"';2,$d'` ;;
+    dylib) ac_cv_lib_soname_txc_dxtn=`$OTOOL -L conftest$ac_exeext | grep "libtxc_dxtn\\.[0-9A-Za-z.]*dylib" | sed -e "s/^.*\/\(libtxc_dxtn\.[0-9A-Za-z.]*dylib\).*$/\1/"';2,$d'` ;;
+    *) ac_cv_lib_soname_txc_dxtn=`$READELF -d conftest$ac_exeext | grep "NEEDED.*libtxc_dxtn\\.$LIBEXT" | sed -e "s/^.*\\[\\(libtxc_dxtn\\.$LIBEXT[^	 ]*\\)\\].*$/\1/"';2,$d'`
+       if ${ac_cv_lib_soname_txc_dxtn:+false} :; then :
+  ac_cv_lib_soname_txc_dxtn=`$LDD conftest$ac_exeext | grep "libtxc_dxtn\\.$LIBEXT" | sed -e "s/^.*\(libtxc_dxtn\.$LIBEXT[^	 ]*\).*$/\1/"';2,$d'`
+fi ;;
+  esac
+fi
+rm -f core conftest.err conftest.$ac_objext \
+    conftest$ac_exeext conftest.$ac_ext
+  LIBS=$ac_check_soname_save_LIBS
+fi
+if ${ac_cv_lib_soname_txc_dxtn:+false} :; then :
+  { $as_echo "$as_me:${as_lineno-$LINENO}: result: not found" >&5
+$as_echo "not found" >&6; }
+
+else
+  { $as_echo "$as_me:${as_lineno-$LINENO}: result: $ac_cv_lib_soname_txc_dxtn" >&5
+$as_echo "$ac_cv_lib_soname_txc_dxtn" >&6; }
+
+cat >>confdefs.h <<_ACEOF
+#define SONAME_LIBTXC_DXTN "$ac_cv_lib_soname_txc_dxtn"
+_ACEOF
+
+
+fi
+        { $as_echo "$as_me:${as_lineno-$LINENO}: checking for fetch_2d_texel_rgba_dxt5 in -ltxc_dxtn" >&5
+$as_echo_n "checking for fetch_2d_texel_rgba_dxt5 in -ltxc_dxtn... " >&6; }
+if ${ac_cv_lib_txc_dxtn_fetch_2d_texel_rgba_dxt5+:} false; then :
+  $as_echo_n "(cached) " >&6
+else
+  ac_check_lib_save_LIBS=$LIBS
+LIBS="-ltxc_dxtn  $LIBS"
+cat confdefs.h - <<_ACEOF >conftest.$ac_ext
+/* end confdefs.h.  */
+
+/* Override any GCC internal prototype to avoid an error.
+   Use char because int might match the return type of a GCC
+   builtin and then its argument prototype would still apply.  */
+#ifdef __cplusplus
+extern "C"
+#endif
+char fetch_2d_texel_rgba_dxt5 ();
+int
+main ()
+{
+return fetch_2d_texel_rgba_dxt5 ();
+  ;
+  return 0;
+}
+_ACEOF
+if ac_fn_c_try_link "$LINENO"; then :
+  ac_cv_lib_txc_dxtn_fetch_2d_texel_rgba_dxt5=yes
+else
+  ac_cv_lib_txc_dxtn_fetch_2d_texel_rgba_dxt5=no
+fi
+rm -f core conftest.err conftest.$ac_objext \
+    conftest$ac_exeext conftest.$ac_ext
+LIBS=$ac_check_lib_save_LIBS
+fi
+{ $as_echo "$as_me:${as_lineno-$LINENO}: result: $ac_cv_lib_txc_dxtn_fetch_2d_texel_rgba_dxt5" >&5
+$as_echo "$ac_cv_lib_txc_dxtn_fetch_2d_texel_rgba_dxt5" >&6; }
+if test "x$ac_cv_lib_txc_dxtn_fetch_2d_texel_rgba_dxt5" = xyes; then :
+  LIBTXC_DXTN="-ltxc_dxtn"
+
+fi
+
+    fi
+fi
+if test "x$ac_cv_lib_txc_dxtn_fetch_2d_texel_rgba_dxt5" != xyes; then :
+  case "x$with_txc_dxtn" in
+  x)   as_fn_append wine_notices "|libtxc_dxtn ${notice_platform}development files not found, S3TC fallback won't be supported." ;;
+  xno) ;;
+  *)   as_fn_error $? "libtxc_dxtn ${notice_platform}development files not found, S3TC fallback won't be supported.
+This is an error since --with-txc_dxtn was requested." "$LINENO" 5 ;;
+esac
+fi
+
 if test "x$enable_winealsa_drv$enable_winecoreaudio_drv$enable_winepulse_drv$enable_wineoss_drv" = xnononono -a \
         "x$with_alsa$with_coreaudio$with_oss$with_pulse" != xnononono
 then
@@ -15405,6 +15665,69 @@ if test "$ac_res" != no; then :
   test "$ac_res" = "none required" || LIBS="$ac_res $LIBS"
 
 $as_echo "#define HAVE_CLOCK_GETTIME 1" >>confdefs.h
+
+                test "$ac_res" = "none required" || RT_LIBS="$ac_res"
+
+fi
+
+LIBS=$ac_save_LIBS
+
+ac_save_LIBS=$LIBS
+{ $as_echo "$as_me:${as_lineno-$LINENO}: checking for library containing shm_open" >&5
+$as_echo_n "checking for library containing shm_open... " >&6; }
+if ${ac_cv_search_shm_open+:} false; then :
+  $as_echo_n "(cached) " >&6
+else
+  ac_func_search_save_LIBS=$LIBS
+cat confdefs.h - <<_ACEOF >conftest.$ac_ext
+/* end confdefs.h.  */
+
+/* Override any GCC internal prototype to avoid an error.
+   Use char because int might match the return type of a GCC
+   builtin and then its argument prototype would still apply.  */
+#ifdef __cplusplus
+extern "C"
+#endif
+char shm_open ();
+int
+main ()
+{
+return shm_open ();
+  ;
+  return 0;
+}
+_ACEOF
+for ac_lib in '' rt; do
+  if test -z "$ac_lib"; then
+    ac_res="none required"
+  else
+    ac_res=-l$ac_lib
+    LIBS="-l$ac_lib  $ac_func_search_save_LIBS"
+  fi
+  if ac_fn_c_try_link "$LINENO"; then :
+  ac_cv_search_shm_open=$ac_res
+fi
+rm -f core conftest.err conftest.$ac_objext \
+    conftest$ac_exeext
+  if ${ac_cv_search_shm_open+:} false; then :
+  break
+fi
+done
+if ${ac_cv_search_shm_open+:} false; then :
+
+else
+  ac_cv_search_shm_open=no
+fi
+rm conftest.$ac_ext
+LIBS=$ac_func_search_save_LIBS
+fi
+{ $as_echo "$as_me:${as_lineno-$LINENO}: result: $ac_cv_search_shm_open" >&5
+$as_echo "$ac_cv_search_shm_open" >&6; }
+ac_res=$ac_cv_search_shm_open
+if test "$ac_res" != no; then :
+  test "$ac_res" = "none required" || LIBS="$ac_res $LIBS"
+
+$as_echo "#define HAVE_SHM_OPEN 1" >>confdefs.h
 
                 test "$ac_res" = "none required" || RT_LIBS="$ac_res"
 
@@ -17248,6 +17571,7 @@ ac_config_links="$ac_config_links wine64:tools/winewrapper"
 wine_fn_config_symlink wine64
 fi
 
+wine_fn_config_dll 32autole enable_32autole
 wine_fn_config_dll acledit enable_acledit
 wine_fn_config_dll aclui enable_aclui implib
 wine_fn_config_dll activeds enable_activeds implib
@@ -17582,6 +17906,8 @@ wine_fn_config_dll iccvid enable_iccvid po
 wine_fn_config_dll icmp enable_icmp
 wine_fn_config_dll ieframe enable_ieframe clean,implib,po
 wine_fn_config_test dlls/ieframe/tests ieframe_test
+wine_fn_config_dll ieinfo5.ocx enable_ieinfo5_ocx
+wine_fn_config_dll iernonce enable_iernonce
 wine_fn_config_dll ifsmgr.vxd enable_win16
 wine_fn_config_dll imaadp32.acm enable_imaadp32_acm
 wine_fn_config_dll imagehlp enable_imagehlp implib

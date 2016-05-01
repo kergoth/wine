@@ -62,6 +62,7 @@ Colormap default_colormap = None;
 XPixmapFormatValues **pixmap_formats;
 unsigned int screen_bpp;
 Window root_window;
+BOOL forcealtrelease = FALSE;
 BOOL usexvidmode = TRUE;
 BOOL usexrandr = TRUE;
 BOOL usexcomposite = TRUE;
@@ -81,6 +82,8 @@ BOOL client_side_with_render = TRUE;
 BOOL shape_layered_windows = TRUE;
 int copy_default_colors = 128;
 int alloc_system_colors = 256;
+BOOL use_egl = FALSE;
+
 DWORD thread_data_tls_index = TLS_OUT_OF_INDEXES;
 int xrender_error_base = 0;
 HMODULE x11drv_module = 0;
@@ -198,7 +201,9 @@ static const char * const atom_names[NB_XATOMS - FIRST_XATOM] =
     "text/plain",
     "text/rtf",
     "text/richtext",
-    "text/uri-list"
+    "text/uri-list",
+    "_CX_WORKAREA", /* CodeWeavers Hack bug 5752 */
+    "_CX_APPLEWM_TAG", /* CodeWeavers Hack bug 9517 */
 };
 
 /***********************************************************************
@@ -279,13 +284,16 @@ static int error_handler( Display *display, XErrorEvent *error_evt )
                error_evt->error_code, error_evt->request_code );
         return 0;
     }
+    ERR("XERROR: code %d request %d minor %d xid %08lx\n",
+        error_evt->error_code,
+        error_evt->request_code,
+        error_evt->minor_code,
+        error_evt->resourceid);
     if (TRACE_ON(synchronous))
     {
-        ERR( "X protocol error: serial=%ld, request_code=%d - breaking into debugger\n",
-             error_evt->serial, error_evt->request_code );
         DebugBreak();  /* force an entry in the debugger */
+        old_error_handler( display, error_evt );
     }
-    old_error_handler( display, error_evt );
     return 0;
 }
 
@@ -411,7 +419,22 @@ static void setup_options(void)
     if (!get_config_key( hkey, appkey, "AllocSystemColors", buffer, sizeof(buffer) ))
         alloc_system_colors = atoi(buffer);
 
+    if (!get_config_key( hkey, appkey, "UseEGL", buffer, sizeof(buffer) ))
+        use_egl = IS_OPTION_TRUE(buffer[0]);
+
     get_config_key( hkey, appkey, "InputStyle", input_style, sizeof(input_style) );
+
+    if (!get_config_key( hkey, appkey, "ForceAltRelease", buffer, sizeof(buffer) ))
+        forcealtrelease = IS_OPTION_TRUE( buffer[0] );
+
+    if (!get_config_key(hkey, appkey, "NvThreads", buffer, sizeof(buffer)))
+    {
+        if (IS_OPTION_TRUE(buffer[0]))
+        {
+            setenv("__GL_THREADED_OPTIMIZATIONS", "1", 1);
+            SetEnvironmentVariableA("__GL_THREADED_OPTIMIZATIONS", "1");
+        }
+    }
 
     if (appkey) RegCloseKey( appkey );
     if (hkey) RegCloseKey( hkey );

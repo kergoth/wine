@@ -2680,6 +2680,33 @@ LONG WINAPI SetWindowLongW(
     INT offset, /* [in] offset, in bytes, of location to alter */
     LONG newval /* [in] new value of location */
 ) {
+    if (GetVersion()&0x80000000 && offset == GWLP_WNDPROC)
+    {
+         /* CodeWeavers Only Hack... Needed for the Delegates tab 
+          * in Outlook XP running in win98 mode
+          */
+         char class[80];
+         GetClassNameA(hwnd, class, sizeof(class));
+         if (strcmp(class,"REListBox20W")==0)
+         {
+            char name[MAX_PATH], *p;
+            
+            GetModuleFileNameA(GetModuleHandleA(NULL),name,MAX_PATH);
+            p = strrchr(name, '\\');
+
+            if (p)
+                p++;
+            else
+                p = name;
+
+            if (!strcasecmp(p,"OUTLOOK.EXE"))
+            {
+                ERR("Outlook in WIN98 calling supposedly unimplemented function, triggering bandaid for class %s\n",debugstr_a(class));
+                SetLastError(ERROR_CALL_NOT_IMPLEMENTED);
+                return 0;
+            }
+         }
+    }
     return WIN_SetWindowLong( hwnd, offset, sizeof(LONG), newval, TRUE );
 }
 
@@ -3806,6 +3833,25 @@ BOOL WINAPI UpdateLayeredWindowIndirect( HWND hwnd, const UPDATELAYEREDWINDOWINF
     if (!USER_Driver->pUpdateLayeredWindow( hwnd, info, &window_rect )) return FALSE;
 
     set_window_pos( hwnd, 0, flags, &window_rect, &client_rect, NULL );
+
+    /*
+     * CrossOver hack:
+     * Hide non-working, semi-transparent window in Quicken 2012.
+     * for bug 8982.
+     */
+    if(1) {
+        static const WCHAR QWinLightbox[] = {'Q','W','i','n','L','i','g','h','t','b','o','x',0};
+        WCHAR window_class[sizeof(QWinLightbox)/sizeof(WCHAR)];
+
+        if(GetClassNameW(hwnd, window_class, sizeof(QWinLightbox)/sizeof(WCHAR))
+                && !memcmp(QWinLightbox, window_class, sizeof(QWinLightbox))) {
+            FIXME("Hide semi-transparent window that is created over application window.\n");
+            SetWindowPos(hwnd, HWND_BOTTOM, 0, 0, 0, 0,
+                    SWP_NOZORDER | SWP_NOACTIVATE | SWP_NOREDRAW | SWP_NOSENDCHANGING);
+        }
+    }
+
+
     return TRUE;
 }
 

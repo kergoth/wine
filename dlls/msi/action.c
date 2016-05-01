@@ -7755,6 +7755,16 @@ UINT ACTION_PerformAction(MSIPACKAGE *package, const WCHAR *action, UINT script)
 
     TRACE("Performing action (%s)\n", debugstr_w(action));
 
+    /* CrossOver Hack #12413 for Quicken 2015 Premier. Don't install the PDF driver */
+    {
+        static const WCHAR pdf[] = {'I','n','s','t','a','l','l','P','D','F','D','r','i','v','e','r',0};
+        if (!strcmpiW(action, pdf))
+        {
+            FIXME("HACK: Skipping installation of pdf driver\n");
+            return rc;
+        }
+    }
+
     handled = ACTION_HandleStandardAction(package, action, &rc);
 
     if (!handled)

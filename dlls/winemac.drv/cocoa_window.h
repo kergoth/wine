@@ -43,6 +43,8 @@
     void* surface;
     pthread_mutex_t* surface_mutex;
 
+    NSRect wineFrame;
+    NSRect roundedWineFrame;
     CGDirectDisplayID _lastDisplayID;
     NSTimeInterval _lastDisplayTime;
 
@@ -88,6 +90,7 @@
 @property (readonly, nonatomic) BOOL floating;
 @property (readonly, getter=isFullscreen, nonatomic) BOOL fullscreen;
 @property (readonly, getter=isFakingClose, nonatomic) BOOL fakingClose;
+@property (readonly, nonatomic) NSRect wine_fractionalFrame;
 
     - (NSInteger) minimumLevelForActive:(BOOL)active;
     - (void) updateFullscreen;
@@ -98,5 +101,7 @@
     - (WineWindow*) ancestorWineWindow;
 
     - (void) updateForCursorClipping;
+
+    - (void) setRetinaMode:(int)mode;
 
 @end

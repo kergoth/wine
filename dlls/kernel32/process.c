@@ -27,6 +27,7 @@
 #include <signal.h>
 #include <stdarg.h>
 #include <stdio.h>
+#include <stdint.h>
 #include <time.h>
 #ifdef HAVE_SYS_TIME_H
 # include <sys/time.h>
@@ -43,6 +44,9 @@
 #include <sys/types.h>
 #ifdef HAVE_SYS_WAIT_H
 # include <sys/wait.h>
+#endif
+#ifdef HAVE_SYS_UN_H
+# include <sys/un.h>
 #endif
 #ifdef HAVE_UNISTD_H
 # include <unistd.h>
@@ -1274,6 +1278,25 @@ void CDECL __wine_kernel_init(void)
         ExitProcess( error );
     }
 
+    /*  CodeWeavers hack on top of the wait-children hack */
+    {
+        const char *child_pipe = getenv("WINE_WAIT_CHILD_PIPE");
+        const char *ignore_child = getenv("WINE_WAIT_CHILD_PIPE_IGNORE");
+        if (child_pipe && ignore_child)
+        {
+            WCHAR ignore[MAX_PATH];
+            MultiByteToWideChar( CP_UNIXCP, 0, ignore_child, -1, ignore, MAX_PATH );
+            if ((p = strrchrW( main_exe_name, '\\' ))) p++;
+            else p = main_exe_name;
+            if (!strcmpiW( p, ignore ))
+            {
+                int fd = atoi(child_pipe);
+                if (fd) close( fd );
+                unsetenv("WINE_WAIT_CHILD_PIPE");
+            }
+        }
+    }
+
     if (!params->CurrentDirectory.Handle) chdir("/"); /* avoid locking removable devices */
 
     LdrInitializeThunk( start_process, 0, 0, 0 );
@@ -1818,6 +1841,331 @@ static BOOL terminate_main_thread(void)
 }
 #endif
 
+
+/* CrossOver Hack 10523: shunt the loading to CrossOver */
+enum { /* must match definitions in Mac app code (WineLoader.m) */
+    REQUEST_LOAD_WINE = 0x52c17355,
+    RESPONSE_SUCCESS,
+};
+
+static BOOL write_data(int sock, const void *buffer, size_t length)
+{
+    const char* p = buffer;
+    while (length)
+    {
+        ssize_t rc = write(sock, p, length);
+        if (rc > 0)
+        {
+            p += rc;
+            length -= rc;
+        }
+        else if (errno != EINTR)
+        {
+            WARN("failed to write data; errno %d\n", errno);
+            return FALSE;
+        }
+    }
+
+    return TRUE;
+}
+
+static BOOL write_length_prefixed_buffer(int sock, const void *buffer, uint64_t length)
+{
+    if (!write_data(sock, &length, sizeof(length)))
+        return FALSE;
+
+    if (!write_data(sock, buffer, length))
+        return FALSE;
+
+    return TRUE;
+}
+
+static BOOL read_data(int sock, void *buffer, size_t length)
+{
+    char* p = buffer;
+    while (length > 0)
+    {
+        int rc = read(sock, p, length);
+        if (rc > 0)
+        {
+            p += rc;
+            length -= rc;
+        }
+        else if (rc == 0 || errno != EINTR)
+            return FALSE;
+    }
+
+    return TRUE;
+}
+
+static BOOL send_to_cx_loader(const char *loader, char **argv, unsigned int flags, int wineserversocket,
+                              int stdin_fd, int stdout_fd, const char *unixdir, char *winedebug,
+                              const struct binary_info *binary_info, const char* wineloader)
+{
+    /* HKCU\Software\CrossOver\SuppressAltLoader */
+    static const WCHAR suppress_key[] = {'S','o','f','t','w','a','r','e','\\',
+                                         'C','r','o','s','s','O','v','e','r','\\',
+                                         'S','u','p','p','r','e','s','s','A','l','t','L','o','a','d','e','r',0};
+    BOOL ret = FALSE;
+    const char *socket_path;
+    int sock = -1;
+    struct sockaddr_un sa;
+    ssize_t rc;
+    uint32_t request_type;
+    char **elem;
+    uint64_t length;
+    uint8_t dummy;
+    struct iovec iov;
+    struct msghdr msg;
+    struct {
+        struct cmsghdr hdr;
+        int fds[5]; // standard in, out, and error, wineserver socket, and WINE_WAIT_CHILD_PIPE
+    } cmsg;
+    int nullfd = -1;
+    const char* wait_child_pipe;
+    uint32_t response;
+
+    TRACE("loader %s flags 0x%08x wineserversocket %d stdin_fd %d stdout_fd %d unixdir %s winedebug %s wineloader %s\n",
+          debugstr_a(loader), flags, wineserversocket, stdin_fd, stdout_fd, debugstr_a(unixdir), debugstr_a(winedebug),
+          debugstr_a(wineloader));
+
+    if (binary_info->flags & BINARY_FLAG_64BIT)
+    {
+        TRACE("ignoring attempt to use Mac app to load 64-bit binary\n");
+        goto failed;
+    }
+
+    socket_path = getenv("CX_ALT_LOADER_SOCKET");
+    if (!socket_path)
+    {
+        TRACE("CX_ALT_LOADER_SOCKET is not set; nothing to do\n");
+        goto failed;
+    }
+
+    TRACE("socket path %s\n", debugstr_a(socket_path));
+
+    if (argv[1])
+    {
+        OBJECT_ATTRIBUTES attr;
+
+        attr.Length = sizeof(attr);
+        attr.Attributes = 0;
+        attr.SecurityDescriptor = NULL;
+        attr.SecurityQualityOfService = NULL;
+
+        if (RtlOpenCurrentUser(KEY_READ, &attr.RootDirectory) == STATUS_SUCCESS)
+        {
+            UNICODE_STRING name;
+            HANDLE hkey;
+
+            attr.ObjectName = &name;
+            RtlInitUnicodeString(&name, suppress_key);
+
+            if (NtOpenKey(&hkey, KEY_READ, &attr) == STATUS_SUCCESS)
+            {
+                const char *exename, *p;
+                int len;
+                WCHAR *exenameW;
+                BOOL suppress;
+                KEY_VALUE_BASIC_INFORMATION info;
+                DWORD size;
+                NTSTATUS status;
+
+                exename = argv[1];
+                if ((p = strrchr(exename, '/'))) exename = p + 1;
+                if ((p = strrchr(exename, '\\'))) exename = p + 1;
+                if (!(p = strrchr(exename, '.'))) p = exename + strlen(exename);
+
+                len = MultiByteToWideChar(CP_UNIXCP, 0, exename, p - exename, NULL, 0);
+                exenameW = HeapAlloc(GetProcessHeap(), 0, (len + 1) * sizeof(WCHAR));
+                MultiByteToWideChar(CP_UNIXCP, 0, exename, p - exename, exenameW, len);
+                exenameW[len] = 0;
+
+                RtlInitUnicodeString(&name, exenameW);
+                status = NtQueryValueKey(hkey, &name, KeyValueBasicInformation, &info, sizeof(info), &size);
+                suppress = (status == STATUS_SUCCESS || status == STATUS_BUFFER_OVERFLOW);
+
+                NtClose(hkey);
+
+                if (suppress)
+                {
+                    TRACE("alternative loader suppressed for exe name %s (argv[1] %s)\n", debugstr_w(exenameW), debugstr_a(argv[1]));
+                    HeapFree(GetProcessHeap(), 0, exenameW);
+                    goto failed;
+                }
+
+                HeapFree(GetProcessHeap(), 0, exenameW);
+            }
+        }
+    }
+
+    sa.sun_family = AF_UNIX;
+    if (strlen(socket_path) >= sizeof(sa.sun_path))
+    {
+        WARN("socket path %s is too long for sockaddr_un\n", debugstr_a(socket_path));
+        goto failed;
+    }
+    lstrcpynA(sa.sun_path, socket_path, sizeof(sa.sun_path));
+#ifdef HAVE_STRUCT_SOCKADDR_UN_SUN_LEN
+    sa.sun_len = SUN_LEN(&sa) + 1;
+#endif
+
+    unsetenv("CX_ALT_LOADER_SOCKET");
+    socket_path = NULL;
+
+    sock = socket(PF_LOCAL, SOCK_STREAM, 0);
+    if (sock == -1)
+    {
+        WARN("failed to create socket; errno %d\n", errno);
+        goto failed;
+    }
+
+    if (fcntl(sock, F_SETFD, FD_CLOEXEC))
+        WARN("failed to set socket close-on-exec; proceeding anyway\n");
+
+    do
+    {
+        rc = connect(sock, (struct sockaddr*)&sa, sizeof(sa));
+    } while (rc == -1 && errno == EINTR);
+    if (rc)
+    {
+        WARN("failed to connect; errno %d\n", errno);
+        goto failed;
+    }
+
+    request_type = REQUEST_LOAD_WINE;
+    if (!write_data(sock, &request_type, sizeof(request_type)))
+    {
+        WARN("failed to write request type\n");
+        goto failed;
+    }
+
+    if (!write_length_prefixed_buffer(sock, unixdir, unixdir ? strlen(unixdir) + 1 : 0))
+    {
+        WARN("failed to write working directory\n");
+        goto failed;
+    }
+
+    length = 0;
+    for (elem = __wine_get_main_environment(); *elem; elem++)
+        length += strlen(*elem) + 1;
+    if (winedebug) length += strlen(winedebug) + 1;
+    if (wineloader) length += strlen(wineloader) + 1;
+
+    if (!write_data(sock, &length, sizeof(length)))
+    {
+        WARN("failed to write environment length\n");
+        goto failed;
+    }
+
+    for (elem = __wine_get_main_environment(); *elem; elem++)
+    {
+        if (!write_data(sock, *elem, strlen(*elem) + 1))
+        {
+            WARN("failed to write environment variable\n");
+            goto failed;
+        }
+    }
+    if (winedebug && !write_data(sock, winedebug, strlen(winedebug) + 1))
+    {
+        WARN("failed to write environment variable\n");
+        goto failed;
+    }
+    if (wineloader && !write_data(sock, wineloader, strlen(wineloader) + 1))
+    {
+        WARN("failed to write environment variable\n");
+        goto failed;
+    }
+
+    length = 0;
+    if (!loader) loader = ""; /* use empty string as placeholder */
+    length += strlen(loader) + 1;
+    for (elem = &argv[1]; *elem; elem++)
+    {
+        TRACE("argv[%d] %s\n", elem - argv, debugstr_a(*elem));
+        length += strlen(*elem) + 1;
+    }
+
+    if (!write_data(sock, &length, sizeof(length)))
+    {
+        WARN("failed to write args length\n");
+        goto failed;
+    }
+
+    if (!write_data(sock, loader, strlen(loader) + 1))
+    {
+        WARN("failed to write argv[0]\n");
+        goto failed;
+    }
+    for (elem = &argv[1]; *elem; elem++)
+    {
+        if (!write_data(sock, *elem, strlen(*elem) + 1))
+        {
+            WARN("failed to write argument\n");
+            goto failed;
+        }
+    }
+
+    if (flags & (CREATE_NEW_PROCESS_GROUP | CREATE_NEW_CONSOLE | DETACHED_PROCESS))
+    {
+        nullfd = open("/dev/null", O_RDWR);
+        stdin_fd = nullfd;
+        stdout_fd = nullfd;
+    }
+
+    iov.iov_base = &dummy;
+    iov.iov_len = sizeof(dummy);
+
+    cmsg.hdr.cmsg_level = SOL_SOCKET;
+    cmsg.hdr.cmsg_type = SCM_RIGHTS;
+    cmsg.fds[0] = stdin_fd == -1 ? 0 : stdin_fd;
+    cmsg.fds[1] = stdout_fd == -1 ? 1 : stdout_fd;
+    cmsg.fds[2] = 2;
+    cmsg.fds[3] = wineserversocket;
+    if ((wait_child_pipe = getenv("WINE_WAIT_CHILD_PIPE")) &&
+        (cmsg.fds[4] = atoi(wait_child_pipe)))
+        cmsg.hdr.cmsg_len = (char*)&cmsg.fds[5] - (char*)&cmsg;
+    else
+        cmsg.hdr.cmsg_len = (char*)&cmsg.fds[4] - (char*)&cmsg;
+
+    msg.msg_name = NULL;
+    msg.msg_namelen = 0;
+    msg.msg_iov = &iov;
+    msg.msg_iovlen = 1;
+    msg.msg_control = &cmsg;
+    msg.msg_controllen = cmsg.hdr.cmsg_len;
+    msg.msg_flags = 0;
+
+    do
+    {
+        rc = sendmsg(sock, &msg, 0);
+    } while (rc == -1 && errno == EINTR);
+    if (rc != 1)
+    {
+        WARN("failed to send file descriptors; errno %d\n", errno);
+        goto failed;
+    }
+
+    if (shutdown(sock, SHUT_WR))
+    {
+        WARN("failed to shutdown socket for writing; errno %d\n", errno);
+        goto failed;
+    }
+
+    if (!read_data(sock, &response, sizeof(response)))
+    {
+        WARN("failed to read response; errno %d\n", errno);
+        goto failed;
+    }
+
+    ret = (response == RESPONSE_SUCCESS);
+
+failed:
+    if (sock != -1) close(sock);
+    if (nullfd != -1) close(nullfd);
+    return ret;
+}
+
 /***********************************************************************
  *           get_process_cpu
  */
@@ -1848,12 +2196,42 @@ static pid_t exec_loader( LPCWSTR cmd_line, unsigned int flags, int socketfd,
     char *wineloader = NULL;
     const char *loader = NULL;
     char **argv;
+    int argc = 1;
 
-    argv = build_argv( cmd_line, 1 );
+#ifdef __arm__
+    char *lib_path = NULL;
+    char *x86_dir = NULL;
+
+    if ((binary_info->arch == IMAGE_FILE_MACHINE_I386) && !(binary_info->flags & BINARY_FLAG_FAKEDLL))
+    {
+        const char *data_dir = wine_get_data_dir();
+
+        x86_dir = HeapAlloc( GetProcessHeap(), 0, strlen( data_dir ) + sizeof("/../../x86" ));
+        strcpy( x86_dir, data_dir );
+        strcat( x86_dir, "/../../x86" );
+
+        TRACE( "trying qemu for %s dir %s\n", debugstr_w(cmd_line), x86_dir );
+        argc = 6;
+        wineloader = HeapAlloc( GetProcessHeap(), 0,
+                                sizeof( "WINELOADER=/bin/wineloader" ) + strlen( x86_dir ));
+        sprintf( wineloader, "WINELOADER=%s/bin/wineloader", x86_dir );
+        lib_path = HeapAlloc( GetProcessHeap(), 0, sizeof( "LD_LIBRARY_PATH=/lib" ) + strlen( x86_dir ));
+        sprintf( lib_path, "LD_LIBRARY_PATH=%s/lib", x86_dir );
+    }
+#endif
+
+    argv = build_argv( cmd_line, argc );
 
     if (!is_win64 ^ !(binary_info->flags & BINARY_FLAG_64BIT))
         loader = get_alternate_loader( &wineloader );
 
+    /* CrossOver Hack 10523: shunt the loading to CrossOver */
+    if (!exec_only && send_to_cx_loader(loader, argv, flags, socketfd, stdin_fd, stdout_fd,
+                                        unixdir, winedebug, binary_info, wineloader))
+    {
+        pid = 0;
+    }
+    else /* end CrossOver hack */
     if (exec_only || !(pid = fork()))  /* child */
     {
         if (exec_only || !(pid = fork()))  /* grandchild */
@@ -1896,6 +2274,21 @@ static pid_t exec_loader( LPCWSTR cmd_line, unsigned int flags, int socketfd,
 
             if (argv)
             {
+#ifdef __arm__
+                if (x86_dir && lib_path)
+                {
+                    int i = 1;
+                    argv[i++] = "-L";
+                    argv[i++] = x86_dir;
+                    argv[i++] = "-E";
+                    argv[i++] = lib_path;
+                    argv[i++] = wineloader + strlen( "WINELOADER=" );
+                    assert( i == argc );
+                    dup2( 2, 1 );
+                    wine_exec_wine_binary( "qemu-i386", argv, NULL );
+                    _exit(1);
+                }
+#endif
                 do
                 {
                     wine_exec_wine_binary( loader, argv, getenv("WINELOADER") );
@@ -1912,7 +2305,7 @@ static pid_t exec_loader( LPCWSTR cmd_line, unsigned int flags, int socketfd,
         _exit(pid == -1);
     }
 
-    if (pid != -1)
+    if (pid && pid != -1)
     {
         /* reap child */
         pid_t wret;
@@ -1921,6 +2314,10 @@ static pid_t exec_loader( LPCWSTR cmd_line, unsigned int flags, int socketfd,
         } while (wret < 0 && errno == EINTR);
     }
 
+#ifdef __arm__
+    HeapFree( GetProcessHeap(), 0, lib_path );
+    HeapFree( GetProcessHeap(), 0, x86_dir );
+#endif
     HeapFree( GetProcessHeap(), 0, wineloader );
     HeapFree( GetProcessHeap(), 0, argv );
     return pid;
@@ -2305,6 +2702,33 @@ static BOOL create_process_impl( LPCWSTR app_name, LPWSTR cmd_line, LPSECURITY_A
                                         &hFile, &binary_info )))
         return FALSE;
     if (hFile == INVALID_HANDLE_VALUE) goto done;
+
+    /* CROSSOVER HACK: bug 13322 (winehq bug 39403)
+     * Insert --no-sandbox in command line of Steam's web helper process to
+     * work around problems hooking our ntdll exports. */
+    {
+        static const WCHAR steamwebhelperexeW[] = {'s','t','e','a','m','w','e','b','h','e','l','p','e','r','.','e','x','e',0};
+        static const WCHAR nosandboxW[] = {' ','-','-','n','o','-','s','a','n','d','b','o','x',0};
+
+        if (strstrW(name, steamwebhelperexeW))
+        {
+            LPWSTR new_command_line;
+
+            new_command_line = HeapAlloc(GetProcessHeap(), 0,
+                sizeof(WCHAR) * (strlenW(tidy_cmdline) + strlenW(nosandboxW) + 1));
+
+            if (!new_command_line) return FALSE;
+
+            strcpyW(new_command_line, tidy_cmdline);
+            strcatW(new_command_line, nosandboxW);
+
+            TRACE("CrossOver hack changing command line to %s\n", debugstr_w(new_command_line));
+
+            if (tidy_cmdline != cmd_line) HeapFree( GetProcessHeap(), 0, tidy_cmdline );
+            tidy_cmdline = new_command_line;
+        }
+    }
+    /* end CROSSOVER HACK */
 
     /* Warn if unsupported features are used */
 

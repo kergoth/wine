@@ -439,6 +439,16 @@ static void ImmInternalPostIMEMessage(InputContextData *data, UINT msg, WPARAM w
        PostMessageW(target, msg, wParam, lParam);
 }
 
+/* for sending messages as the IME */
+static void ImmInternalSendIMEMessage(InputContextData *data, UINT msg, WPARAM wParam, LPARAM lParam)
+{
+    HWND target = GetFocus();
+    if (!target)
+       SendMessageW(data->IMC.hWnd,msg,wParam,lParam);
+    else
+       SendMessageW(target, msg, wParam, lParam);
+}
+
 static LRESULT ImmInternalSendIMENotify(InputContextData *data, WPARAM notify, LPARAM lParam)
 {
     HWND target;
@@ -2883,15 +2893,23 @@ BOOL WINAPI ImmGenerateMessage(HIMC hIMC)
     if (data->IMC.dwNumMsgBuf > 0)
     {
         LPTRANSMSG lpTransMsg;
-        DWORD i;
+        HIMCC hMsgBuf;
+        DWORD i, dwNumMsgBuf;
 
-        lpTransMsg = ImmLockIMCC(data->IMC.hMsgBuf);
-        for (i = 0; i < data->IMC.dwNumMsgBuf; i++)
-            ImmInternalPostIMEMessage(data, lpTransMsg[i].message, lpTransMsg[i].wParam, lpTransMsg[i].lParam);
+        /* We are going to detach our hMsgBuff so that if processing messages
+           generates new messages they go into a new buffer */
+        hMsgBuf = data->IMC.hMsgBuf;
+        dwNumMsgBuf = data->IMC.dwNumMsgBuf;
 
-        ImmUnlockIMCC(data->IMC.hMsgBuf);
-
+        data->IMC.hMsgBuf = ImmCreateIMCC(0);
         data->IMC.dwNumMsgBuf = 0;
+
+        lpTransMsg = ImmLockIMCC(hMsgBuf);
+        for (i = 0; i < dwNumMsgBuf; i++)
+            ImmInternalSendIMEMessage(data, lpTransMsg[i].message, lpTransMsg[i].wParam, lpTransMsg[i].lParam);
+
+        ImmUnlockIMCC(hMsgBuf);
+        ImmDestroyIMCC(hMsgBuf);
     }
 
     return TRUE;

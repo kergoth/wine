@@ -2904,6 +2904,61 @@ struct opengl_funcs
         BOOL       (WINE_GLAPI *p_wglSetPixelFormatWINE)(HDC,int);
         BOOL       (WINE_GLAPI *p_wglSwapIntervalEXT)(int);
     } ext;
+    /* CrossOver Hack 10798 */
+    struct
+    {
+        void       (WINE_GLAPI *p_gluBeginCurve)(void*);
+        void       (WINE_GLAPI *p_gluBeginPolygon)(void*);
+        void       (WINE_GLAPI *p_gluBeginSurface)(void*);
+        void       (WINE_GLAPI *p_gluBeginTrim)(void*);
+        GLint      (WINE_GLAPI *p_gluBuild1DMipmaps)(GLenum,GLint,GLsizei,GLenum,GLenum,const void *);
+        GLint      (WINE_GLAPI *p_gluBuild2DMipmaps)(GLenum,GLint,GLsizei,GLsizei,GLenum,GLenum,const void *);
+        void       (WINE_GLAPI *p_gluCylinder)(void*,GLdouble,GLdouble,GLdouble,GLint,GLint);
+        void       (WINE_GLAPI *p_gluDeleteNurbsRenderer)(void*);
+        void       (WINE_GLAPI *p_gluDeleteQuadric)(void*);
+        void       (WINE_GLAPI *p_gluDeleteTess)(void*);
+        void       (WINE_GLAPI *p_gluDisk)(void*,GLdouble,GLdouble,GLint,GLint);
+        void       (WINE_GLAPI *p_gluEndCurve)(void*);
+        void       (WINE_GLAPI *p_gluEndPolygon)(void*);
+        void       (WINE_GLAPI *p_gluEndSurface)(void*);
+        void       (WINE_GLAPI *p_gluEndTrim)(void*);
+        const GLubyte * (WINE_GLAPI *p_gluErrorString)(GLenum);
+        void       (WINE_GLAPI *p_gluGetNurbsProperty)(void*,GLenum,GLfloat*);
+        const GLubyte * (WINE_GLAPI *p_gluGetString)(GLenum);
+        void       (WINE_GLAPI *p_gluGetTessProperty)(void*,GLenum,GLdouble*);
+        void       (WINE_GLAPI *p_gluLoadSamplingMatrices)(void*,const GLfloat *,const GLfloat *,const GLint *);
+        void       (WINE_GLAPI *p_gluLookAt)(GLdouble,GLdouble,GLdouble,GLdouble,GLdouble,GLdouble,GLdouble,GLdouble,GLdouble);
+        void*      (WINE_GLAPI *p_gluNewNurbsRenderer)(void);
+        void*      (WINE_GLAPI *p_gluNewQuadric)(void);
+        void*      (WINE_GLAPI *p_gluNewTess)(void);
+        void       (WINE_GLAPI *p_gluNextContour)(void*,GLenum);
+        void       (WINE_GLAPI *p_gluNurbsCallback)(void*,GLenum,void *);
+        void       (WINE_GLAPI *p_gluNurbsCurve)(void*,GLint,GLfloat *,GLint,GLfloat *,GLint,GLenum);
+        void       (WINE_GLAPI *p_gluNurbsProperty)(void*,GLenum,GLfloat);
+        void       (WINE_GLAPI *p_gluNurbsSurface)(void*,GLint,GLfloat*,GLint,GLfloat*,GLint,GLint,GLfloat*,GLint,GLint,GLenum);
+        void       (WINE_GLAPI *p_gluOrtho2D)(GLdouble,GLdouble,GLdouble,GLdouble);
+        void       (WINE_GLAPI *p_gluPartialDisk)(void*,GLdouble,GLdouble,GLint,GLint,GLdouble,GLdouble);
+        void       (WINE_GLAPI *p_gluPerspective)(GLdouble,GLdouble,GLdouble,GLdouble);
+        void       (WINE_GLAPI *p_gluPickMatrix)(GLdouble,GLdouble,GLdouble,GLdouble,GLint *);
+        GLint      (WINE_GLAPI *p_gluProject)(GLdouble,GLdouble,GLdouble,const GLdouble *,const GLdouble *,const GLint *,GLdouble*,GLdouble*,GLdouble*);
+        void       (WINE_GLAPI *p_gluPwlCurve)(void*,GLint,GLfloat*,GLint,GLenum);
+        void       (WINE_GLAPI *p_gluQuadricCallback)(void*,GLenum,void *);
+        void       (WINE_GLAPI *p_gluQuadricDrawStyle)(void*,GLenum);
+        void       (WINE_GLAPI *p_gluQuadricNormals)(void*,GLenum);
+        void       (WINE_GLAPI *p_gluQuadricOrientation)(void*,GLenum);
+        void       (WINE_GLAPI *p_gluQuadricTexture)(void*,GLboolean);
+        GLint      (WINE_GLAPI *p_gluScaleImage)(GLenum,GLsizei,GLsizei,GLenum,const void *,GLsizei,GLsizei,GLenum,GLvoid*);
+        void       (WINE_GLAPI *p_gluSphere)(void*,GLdouble,GLint,GLint);
+        void       (WINE_GLAPI *p_gluTessBeginContour)(void*);
+        void       (WINE_GLAPI *p_gluTessBeginPolygon)(void*,GLvoid*);
+        void       (WINE_GLAPI *p_gluTessCallback)(void*,GLenum,void *);
+        void       (WINE_GLAPI *p_gluTessEndContour)(void*);
+        void       (WINE_GLAPI *p_gluTessEndPolygon)(void*);
+        void       (WINE_GLAPI *p_gluTessNormal)(void*,GLdouble,GLdouble,GLdouble);
+        void       (WINE_GLAPI *p_gluTessProperty)(void*,GLenum,GLdouble);
+        void       (WINE_GLAPI *p_gluTessVertex)(void*,GLdouble *,GLvoid*);
+        GLint      (WINE_GLAPI *p_gluUnProject)(GLdouble,GLdouble,GLdouble,const GLdouble *,const GLdouble *,const GLint *,GLdouble*,GLdouble*,GLdouble*);
+    } glu;
 };
 
 #define ALL_WGL_FUNCS \
@@ -3243,6 +3298,60 @@ struct opengl_funcs
     USE_GL_FUNC(glVertex4sv) \
     USE_GL_FUNC(glVertexPointer) \
     USE_GL_FUNC(glViewport)
+
+/* CrossOver Hack 10798 */
+#define ALL_GLU_FUNCS \
+    USE_GL_FUNC(gluBeginCurve) \
+    USE_GL_FUNC(gluBeginPolygon) \
+    USE_GL_FUNC(gluBeginSurface) \
+    USE_GL_FUNC(gluBeginTrim) \
+    USE_GL_FUNC(gluBuild1DMipmaps) \
+    USE_GL_FUNC(gluBuild2DMipmaps) \
+    USE_GL_FUNC(gluCylinder) \
+    USE_GL_FUNC(gluDeleteNurbsRenderer) \
+    USE_GL_FUNC(gluDeleteQuadric) \
+    USE_GL_FUNC(gluDeleteTess) \
+    USE_GL_FUNC(gluDisk) \
+    USE_GL_FUNC(gluEndCurve) \
+    USE_GL_FUNC(gluEndPolygon) \
+    USE_GL_FUNC(gluEndSurface) \
+    USE_GL_FUNC(gluEndTrim) \
+    USE_GL_FUNC(gluErrorString) \
+    USE_GL_FUNC(gluGetNurbsProperty) \
+    USE_GL_FUNC(gluGetString) \
+    USE_GL_FUNC(gluGetTessProperty) \
+    USE_GL_FUNC(gluLoadSamplingMatrices) \
+    USE_GL_FUNC(gluLookAt) \
+    USE_GL_FUNC(gluNewNurbsRenderer) \
+    USE_GL_FUNC(gluNewQuadric) \
+    USE_GL_FUNC(gluNewTess) \
+    USE_GL_FUNC(gluNextContour) \
+    USE_GL_FUNC(gluNurbsCallback) \
+    USE_GL_FUNC(gluNurbsCurve) \
+    USE_GL_FUNC(gluNurbsProperty) \
+    USE_GL_FUNC(gluNurbsSurface) \
+    USE_GL_FUNC(gluOrtho2D) \
+    USE_GL_FUNC(gluPartialDisk) \
+    USE_GL_FUNC(gluPerspective) \
+    USE_GL_FUNC(gluPickMatrix) \
+    USE_GL_FUNC(gluProject) \
+    USE_GL_FUNC(gluPwlCurve) \
+    USE_GL_FUNC(gluQuadricCallback) \
+    USE_GL_FUNC(gluQuadricDrawStyle) \
+    USE_GL_FUNC(gluQuadricNormals) \
+    USE_GL_FUNC(gluQuadricOrientation) \
+    USE_GL_FUNC(gluQuadricTexture) \
+    USE_GL_FUNC(gluScaleImage) \
+    USE_GL_FUNC(gluSphere) \
+    USE_GL_FUNC(gluTessBeginContour) \
+    USE_GL_FUNC(gluTessBeginPolygon) \
+    USE_GL_FUNC(gluTessCallback) \
+    USE_GL_FUNC(gluTessEndContour) \
+    USE_GL_FUNC(gluTessEndPolygon) \
+    USE_GL_FUNC(gluTessNormal) \
+    USE_GL_FUNC(gluTessProperty) \
+    USE_GL_FUNC(gluTessVertex) \
+    USE_GL_FUNC(gluUnProject)
 
 extern struct opengl_funcs * CDECL __wine_get_wgl_driver( HDC hdc, UINT version );
 extern BOOL CDECL __wine_set_pixel_format( HWND hwnd, int format );

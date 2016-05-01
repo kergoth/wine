@@ -491,7 +491,7 @@ LRESULT WINPROC_CallProcAtoW( winproc_callback_t callback, HWND hwnd, UINT msg, 
     case LB_DIR:
     case LB_ADDFILE:
     case EM_REPLACESEL:
-        if (!lParam) ret = callback( hwnd, msg, wParam, lParam, result, arg );
+        if (!HIWORD(lParam)) ret = callback( hwnd, msg, wParam, lParam, result, arg );
         else
         {
             WCHAR *ptr, buffer[512];

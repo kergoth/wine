@@ -2630,6 +2630,16 @@ static nsresult NSAPI nsURI_SchemeIs(nsIFileURL *iface, const char *scheme, cpp_
 
     MultiByteToWideChar(CP_UTF8, 0, scheme, -1, buf, sizeof(buf)/sizeof(WCHAR));
     *_retval = !strcmpW(scheme_name, buf);
+
+    /* CXHACK: We cheat security check for posting data from secure to insecure location for STO. See bug 7867 */
+    if(!*_retval && !strcmp(scheme, "https")) {
+        static const WCHAR appW[] = {'a','p','p',0};
+        if(!strcmpW(scheme_name, appW)) {
+            FIXME("CXHACK: https -> app post\n");
+            *_retval = TRUE;
+        }
+    }
+
     SysFreeString(scheme_name);
     return NS_OK;
 }
@@ -4033,12 +4043,20 @@ static BOOL translate_url(HTMLDocumentObj *doc, nsWineURI *uri)
     BOOL ret = FALSE;
     HRESULT hres;
 
+    static const WCHAR appW[] = {'a','p','p',':'};
+
     if(!doc->hostui || !ensure_uri(uri))
         return FALSE;
 
     hres = IUri_GetDisplayUri(uri->uri, &url);
     if(FAILED(hres))
         return FALSE;
+
+    if(!strncmpW(url, appW, sizeof(appW)/sizeof(WCHAR))) {
+        WCHAR *ptr = strchrW(url, '?');
+        if(ptr)
+            *ptr = 0;
+    }
 
     hres = IDocHostUIHandler_TranslateUrl(doc->hostui, 0, url, &new_url);
     if(hres == S_OK && new_url) {

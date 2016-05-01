@@ -1507,6 +1507,8 @@ static INT scroll_window( HWND hwnd, INT dx, INT dy, const RECT *rect, const REC
             DeleteObject( hrgnClip );
         }
         DeleteObject( hrgnTemp );
+        if (rcUpdate)
+            GetRgnBox( hrgnUpdate, rcUpdate);
     } else {
         /* nothing was scrolled */
         if( !bOwnRgn)

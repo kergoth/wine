@@ -466,7 +466,7 @@ static HRESULT WINAPI HTMLLocation_get_pathname(IHTMLLocation *iface, BSTR *p)
     if(FAILED(hres))
         return hres;
 
-    if(url.dwUrlPathLength && url.lpszUrlPath[0] == '/')
+    if(0&&url.dwUrlPathLength && url.lpszUrlPath[0] == '/')
         *p = SysAllocStringLen(url.lpszUrlPath + 1, url.dwUrlPathLength - 1);
     else
         *p = SysAllocStringLen(url.lpszUrlPath, url.dwUrlPathLength);
