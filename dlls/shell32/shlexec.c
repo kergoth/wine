@@ -26,11 +26,15 @@
 #include <string.h>
 #include <stdarg.h>
 #include <stdio.h>
+#include <errno.h>
 #ifdef HAVE_UNISTD_H
 # include <unistd.h>
 #endif
 #include <ctype.h>
 #include <assert.h>
+#ifdef HAVE_SYS_WAIT_H
+# include <sys/wait.h>
+#endif
 
 #define COBJMACROS
 
@@ -1553,6 +1557,48 @@ static void do_error_dialog( UINT_PTR retval, HWND hwnd )
     MessageBoxW(hwnd, msg, NULL, MB_ICONERROR);
 }
 
+#if defined(HAVE_FORK) && defined(HAVE_WAITPID)
+static UINT_PTR SHELL_try_native_execute ( const char *openCmd, const char *unixName )
+{
+    UINT_PTR retval = SE_ERR_NOASSOC;
+    pid_t cpid;
+    struct stat st;
+
+    if (stat(openCmd, &st) == -1)
+    {
+        TRACE("stat() %s failed: %s\n", openCmd, strerror(errno));
+        return retval;
+    }
+
+    cpid = fork();
+    if (!cpid)
+    {
+        /* Prevent the situation where the native file association database
+         * tries to run wine to execute a program and we trigger this fallback
+         * path again and end up in a recursive loop */
+        if (getenv("WINE_INSIDE_SHELLEXECUTE"))
+        {
+            TRACE("recursive loop detected, not continuing with ShellExecute call\n");
+            exit(EXIT_SUCCESS);
+        }
+        setenv("WINE_INSIDE_SHELLEXECUTE", "1", 0);
+
+        TRACE("running %s %s\n", openCmd, unixName);
+        execlp(openCmd, openCmd, unixName, (char*) NULL);
+        /* execlp replaces the current process image with a new process image,
+         * so no code below here should get executed by the forked child */
+    } else {
+        int status;
+        waitpid(cpid, &status, 0);
+        TRACE("status %x\n", status);
+        if(!WEXITSTATUS(status))
+            retval = 33;
+    }
+
+    return retval;
+}
+#endif
+
 /*************************************************************************
  *	SHELL_execute [Internal]
  */
@@ -1843,6 +1889,41 @@ static BOOL SHELL_execute( LPSHELLEXECUTEINFOW sei, SHELL_ExecuteW32 execfunc )
         strcatW(lpstrTmpFile, lpFile);
         retval = (UINT_PTR)ShellExecuteW(sei_tmp.hwnd, sei_tmp.lpVerb, lpstrTmpFile, NULL, NULL, 0);
     }
+#if defined(HAVE_FORK) && defined(HAVE_WAITPID)
+    /* Integration with native file association database */
+    else
+    {
+        char * unixName;
+        LPSTR (*wine_get_unix_file_name_ptr)(LPCWSTR) = NULL;
+
+        wine_get_unix_file_name_ptr = (void*)
+            GetProcAddress(GetModuleHandleA("KERNEL32"),
+                           "wine_get_unix_file_name");
+
+        unixName = wine_get_unix_file_name_ptr(lpFile);
+
+#ifdef __APPLE__
+        retval = SHELL_try_native_execute("/usr/bin/open", unixName);
+#else
+        /* Try to use xdg-open to execute the file first */
+        retval = SHELL_try_native_execute("/usr/bin/xdg-open", unixName);
+        if (retval == SE_ERR_NOASSOC)
+        {
+            /* xdg-open could not be found, try to detect the desktop environment */
+            if (getenv("KDE_FULL_SESSION"))
+            {
+                retval = SHELL_try_native_execute("/usr/bin/kde-open", unixName);
+            }
+            else if (getenv("GNOME_DESKTOP_SESSION_ID"))
+            {
+                retval = SHELL_try_native_execute("/usr/bin/gnome-open", unixName);
+            }
+        }
+#endif
+
+        HeapFree(GetProcessHeap(), 0, unixName);
+    }
+#endif
 
     TRACE("retval %lu\n", retval);
 
