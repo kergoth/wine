@@ -23,6 +23,8 @@
 #ifdef HAVE_FLOAT_H
 #include <float.h>
 #endif
+#include <string.h>
+
 
 WINE_DEFAULT_DEBUG_CHANNEL(d2d);
 
