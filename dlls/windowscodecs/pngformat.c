@@ -618,6 +618,8 @@ static HRESULT WINAPI PngDecoder_Initialize(IWICBitmapDecoder *iface, IStream *p
     int num_trans;
     png_uint_32 transparency;
     png_color_16p trans_values;
+    png_colorp png_palette;
+    int num_palette;
     jmp_buf jmpbuf;
     BYTE chunk_type[4];
     ULONG chunk_size;
@@ -684,21 +686,11 @@ static HRESULT WINAPI PngDecoder_Initialize(IWICBitmapDecoder *iface, IStream *p
     /* check for color-keyed alpha */
     transparency = ppng_get_tRNS(This->png_ptr, This->info_ptr, &trans, &num_trans, &trans_values);
 
-    if (transparency && color_type != PNG_COLOR_TYPE_PALETTE)
-    {
-        /* expand to RGBA */
-        if (color_type == PNG_COLOR_TYPE_GRAY)
-        {
-            if (bit_depth < 8)
-            {
-                ppng_set_expand_gray_1_2_4_to_8(This->png_ptr);
-                bit_depth = 8;
-            }
-            ppng_set_gray_to_rgb(This->png_ptr);
-        }
-        ppng_set_tRNS_to_alpha(This->png_ptr);
-        color_type = PNG_COLOR_TYPE_RGB_ALPHA;
-    }
+    if (!ppng_get_PLTE(This->png_ptr, This->info_ptr, &png_palette, &num_palette))
+        num_palette = 0;
+
+    TRACE("color_type %d, bit_depth %d, transparency %d, num_palette %d\n",
+          color_type, bit_depth, transparency, num_palette);
 
     switch (color_type)
     {
