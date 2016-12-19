@@ -1158,6 +1158,8 @@ static HRESULT WINAPI ddraw_surface1_Lock(IDirectDrawSurface *iface, RECT *rect,
  *  For more details, see IWineD3DSurface::UnlockRect
  *
  *****************************************************************************/
+static HRESULT WINAPI ddraw_surface7_GetDC(IDirectDrawSurface7 *iface, HDC *dc);
+static HRESULT WINAPI ddraw_surface7_ReleaseDC(IDirectDrawSurface7 *iface, HDC hdc);
 static HRESULT WINAPI DECLSPEC_HOTPATCH ddraw_surface7_Unlock(IDirectDrawSurface7 *iface, RECT *pRect)
 {
     struct ddraw_surface *surface = impl_from_IDirectDrawSurface7(iface);
@@ -1170,6 +1172,21 @@ static HRESULT WINAPI DECLSPEC_HOTPATCH ddraw_surface7_Unlock(IDirectDrawSurface
     if (SUCCEEDED(hr) && surface->surface_desc.ddsCaps.dwCaps & DDSCAPS_PRIMARYSURFACE)
         hr = ddraw_surface_update_frontbuffer(surface, &surface->ddraw->primary_lock, FALSE);
     wined3d_mutex_unlock();
+
+    if (getenv("DDRAW_HACK")) {
+        HDC src;
+        if (ddraw_surface7_GetDC(iface, &src) == DD_OK) {
+            POINT p = {1, 1};
+            HWND hwnd = WindowFromPoint(p);
+            HDC dst = GetDC(hwnd);
+            if (dst) {
+                BitBlt(dst, 0, 0, 640, 480, src, 0, 0, SRCCOPY);
+                ReleaseDC(hwnd, dst);
+            }
+            ddraw_surface7_ReleaseDC(iface, src);
+        }
+        TRACE("---end\n");
+    }
 
     return hr;
 }
