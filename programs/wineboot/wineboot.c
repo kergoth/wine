@@ -82,6 +82,7 @@
 #include <shlwapi.h>
 #include <shellapi.h>
 #include <ntsecapi.h>
+#include <wininet.h>
 #include "resource.h"
 
 WINE_DEFAULT_DEBUG_CHANNEL(wineboot);
@@ -552,6 +553,13 @@ static void create_volatile_environment_registry_key(void)
 
     set_reg_value( hkey, SessionNameW, ConsoleW );
     RegCloseKey( hkey );
+}
+
+static void create_proxy_settings(void)
+{
+    HINTERNET inet;
+    inet = InternetOpenA( "Wine", INTERNET_OPEN_TYPE_PRECONFIG, NULL, NULL, 0 );
+    if (inet) InternetCloseHandle( inet );
 }
 
 static void create_etc_stub_files(void)
@@ -1498,6 +1506,7 @@ int main( int argc, char *argv[] )
     }
 
     create_volatile_environment_registry_key();
+    create_proxy_settings();
 
     if (init || update) update_wineprefix( update );
 
