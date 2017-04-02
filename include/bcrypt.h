@@ -70,6 +70,7 @@ typedef LONG NTSTATUS;
 #define BCRYPT_SHA256_ALGORITHM     (const WCHAR []){'S','H','A','2','5','6',0}
 #define BCRYPT_SHA384_ALGORITHM     (const WCHAR []){'S','H','A','3','8','4',0}
 #define BCRYPT_SHA512_ALGORITHM     (const WCHAR []){'S','H','A','5','1','2',0}
+#define BCRYPT_RSA_ALGORITHM        (const WCHAR []){'R','S','A',0 }
 
 #define BCRYPT_CHAIN_MODE_NA        (const WCHAR []){'C','h','a','i','n','i','n','g','M','o','d','e','N','/','A',0}
 #define BCRYPT_CHAIN_MODE_CBC       (const WCHAR []){'C','h','a','i','n','i','n','g','M','o','d','e','C','B','C',0}
@@ -81,6 +82,25 @@ typedef struct _BCRYPT_ALGORITHM_IDENTIFIER
     ULONG  dwClass;
     ULONG  dwFlags;
 } BCRYPT_ALGORITHM_IDENTIFIER;
+
+#define BCRYPT_PAD_PKCS1            0x00000002
+
+typedef struct _BCRYPT_PKCS1_PADDING_INFO {
+    LPCWSTR pszAlgId;
+} BCRYPT_PKCS1_PADDING_INFO;
+
+#define BCRYPT_RSAPRIVATE_BLOB      (const WCHAR []){'R','S','A','P','R','I','V','A','T','E','B','L','O','B',0}
+#define BCRYPT_RSAPUBLIC_BLOB       (const WCHAR []){'R','S','A','P','U','B','L','I','C','B','L','O','B',0}
+#define BCRYPT_RSAPUBLIC_MAGIC      0x31415352 /* RSA1 */
+
+typedef struct _BCRYPT_RSAKEY_BLOB {
+    ULONG Magic;
+    ULONG BitLength;
+    ULONG cbPublicExp;
+    ULONG cbModulus;
+    ULONG cbPrime1;
+    ULONG cbPrime2;
+} BCRYPT_RSAKEY_BLOB;
 
 typedef PVOID BCRYPT_ALG_HANDLE;
 typedef PVOID BCRYPT_KEY_HANDLE;
@@ -111,7 +131,9 @@ NTSTATUS WINAPI BCryptGetFipsAlgorithmMode(BOOLEAN *);
 NTSTATUS WINAPI BCryptGetProperty(BCRYPT_HANDLE, LPCWSTR, PUCHAR, ULONG, ULONG *, ULONG);
 NTSTATUS WINAPI BCryptHash(BCRYPT_ALG_HANDLE, PUCHAR, ULONG, PUCHAR, ULONG, PUCHAR, ULONG);
 NTSTATUS WINAPI BCryptHashData(BCRYPT_HASH_HANDLE, PUCHAR, ULONG, ULONG);
+NTSTATUS WINAPI BCryptImportKeyPair(BCRYPT_ALG_HANDLE, BCRYPT_KEY_HANDLE, LPCWSTR, BCRYPT_KEY_HANDLE *, PUCHAR, ULONG, DWORD);
 NTSTATUS WINAPI BCryptOpenAlgorithmProvider(BCRYPT_ALG_HANDLE *, LPCWSTR, LPCWSTR, ULONG);
 NTSTATUS WINAPI BCryptSetProperty(BCRYPT_HANDLE, LPCWSTR, PUCHAR, ULONG, ULONG);
+NTSTATUS WINAPI BCryptVerifySignature(BCRYPT_KEY_HANDLE, PVOID, PUCHAR, ULONG, PUCHAR, ULONG, ULONG);
 
 #endif  /* __WINE_BCRYPT_H */

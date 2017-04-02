@@ -27,6 +27,7 @@
 #elif defined(SONAME_LIBGNUTLS)
 #include <gnutls/gnutls.h>
 #include <gnutls/crypto.h>
+#include <gnutls/abstract.h>
 #endif
 
 #include "ntstatus.h"
@@ -56,6 +57,12 @@ MAKE_FUNCPTR(gnutls_global_init);
 MAKE_FUNCPTR(gnutls_global_set_log_function);
 MAKE_FUNCPTR(gnutls_global_set_log_level);
 MAKE_FUNCPTR(gnutls_perror);
+MAKE_FUNCPTR(gnutls_pk_to_sign);
+MAKE_FUNCPTR(gnutls_pubkey_deinit);
+MAKE_FUNCPTR(gnutls_pubkey_get_pk_algorithm);
+MAKE_FUNCPTR(gnutls_pubkey_import_rsa_raw);
+MAKE_FUNCPTR(gnutls_pubkey_init);
+MAKE_FUNCPTR(gnutls_pubkey_verify_hash2);
 #undef MAKE_FUNCPTR
 
 static void gnutls_log( int level, const char *msg )
@@ -85,6 +92,12 @@ static BOOL gnutls_initialize(void)
     LOAD_FUNCPTR(gnutls_global_set_log_function)
     LOAD_FUNCPTR(gnutls_global_set_log_level)
     LOAD_FUNCPTR(gnutls_perror)
+    LOAD_FUNCPTR(gnutls_pk_to_sign)
+    LOAD_FUNCPTR(gnutls_pubkey_deinit)
+    LOAD_FUNCPTR(gnutls_pubkey_get_pk_algorithm)
+    LOAD_FUNCPTR(gnutls_pubkey_import_rsa_raw)
+    LOAD_FUNCPTR(gnutls_pubkey_init)
+    LOAD_FUNCPTR(gnutls_pubkey_verify_hash2)
 #undef LOAD_FUNCPTR
 
     if ((ret = pgnutls_global_init()) != GNUTLS_E_SUCCESS)
@@ -140,7 +153,8 @@ enum alg_id
     ALG_ID_SHA1,
     ALG_ID_SHA256,
     ALG_ID_SHA384,
-    ALG_ID_SHA512
+    ALG_ID_SHA512,
+    ALG_ID_RSA
 };
 
 #define MAX_HASH_OUTPUT_BYTES 64
@@ -230,6 +244,7 @@ NTSTATUS WINAPI BCryptOpenAlgorithmProvider( BCRYPT_ALG_HANDLE *handle, LPCWSTR 
     else if (!strcmpW( id, BCRYPT_SHA256_ALGORITHM )) alg_id = ALG_ID_SHA256;
     else if (!strcmpW( id, BCRYPT_SHA384_ALGORITHM )) alg_id = ALG_ID_SHA384;
     else if (!strcmpW( id, BCRYPT_SHA512_ALGORITHM )) alg_id = ALG_ID_SHA512;
+    else if (!strcmpW( id, BCRYPT_RSA_ALGORITHM )) alg_id = ALG_ID_RSA;
     else
     {
         FIXME( "algorithm %s not supported\n", debugstr_w(id) );
@@ -630,6 +645,146 @@ NTSTATUS WINAPI BCryptHash( BCRYPT_ALG_HANDLE algorithm, UCHAR *secret, ULONG se
     }
 
     return BCryptDestroyHash( handle );
+}
+
+NTSTATUS WINAPI BCryptImportKeyPair(BCRYPT_ALG_HANDLE algorithm, BCRYPT_KEY_HANDLE import_key,
+                                    LPCWSTR blob_type, BCRYPT_KEY_HANDLE *key,
+                                    UCHAR *input, ULONG input_len, DWORD flags)
+{
+    struct algorithm *alg = (struct algorithm*)algorithm;
+
+    FIXME("%p, %p, %s, %p, %p, %u, %08x - semi-stub\n", algorithm, import_key, wine_dbgstr_w(blob_type), key, input, input_len, flags);
+
+    if (!pgnutls_pubkey_import_rsa_raw)
+        return STATUS_NOT_IMPLEMENTED;
+
+    if (!alg || alg->hdr.magic != MAGIC_ALG) return STATUS_INVALID_HANDLE;
+
+    if (!key)
+        return STATUS_INVALID_PARAMETER;
+    if (!input)
+        return STATUS_INVALID_PARAMETER;
+
+    *key = NULL;
+
+    if (alg->id == ALG_ID_RSA)
+    {
+        if (lstrcmpW(BCRYPT_RSAPUBLIC_BLOB, blob_type) == 0)
+        {
+            int ret;
+
+            gnutls_pubkey_t pubkey;
+            gnutls_datum_t exp;
+            gnutls_datum_t modulus;
+            BCRYPT_RSAKEY_BLOB *rsakey_blob = (void*)input;
+
+            if (rsakey_blob->Magic != BCRYPT_RSAPUBLIC_MAGIC)
+            {
+                ERR("wrong magic=%u, line=%d\n", rsakey_blob->Magic, __LINE__);
+                return STATUS_INVALID_PARAMETER;
+            }
+
+            exp.data = input + sizeof(*rsakey_blob),
+            exp.size = rsakey_blob->cbPublicExp;
+
+            modulus.data = input + sizeof(*rsakey_blob) + rsakey_blob->cbPublicExp;
+            modulus.size = rsakey_blob->cbModulus;
+
+            ret = pgnutls_pubkey_init(&pubkey);
+            if (ret < 0)
+            {
+                ERR("gnutls_pubkey_init failed, ret=%d\n", ret);
+                return STATUS_UNSUCCESSFUL;
+            }
+
+            ret = pgnutls_pubkey_import_rsa_raw(pubkey, &modulus, &exp);
+            if (ret < 0)
+            {
+                pgnutls_pubkey_deinit(pubkey);
+                ERR("gnutls_pubkey_import_rsa_raw failed, ret=%d\n", ret);
+                return STATUS_UNSUCCESSFUL;
+            }
+
+            *key = pubkey;
+            return STATUS_SUCCESS;
+        }
+    }
+
+    return STATUS_NOT_IMPLEMENTED;
+}
+
+NTSTATUS WINAPI BCryptVerifySignature(BCRYPT_KEY_HANDLE key, void* padding_info, UCHAR *hash, ULONG hash_len,
+                                      UCHAR *signature, ULONG signature_len, ULONG flags)
+{
+    gnutls_pubkey_t pubkey = (gnutls_pubkey_t)key;
+    gnutls_digest_algorithm_t hash_algo = GNUTLS_DIG_UNKNOWN;
+    gnutls_sign_algorithm_t sign_algo;
+    gnutls_datum_t hash_data;
+    gnutls_datum_t signature_data;
+    int ret;
+
+    FIXME("%p, %p, %p, %u, %p, %u, %08x - semi-stub\n", key, padding_info, hash, hash_len, signature, signature_len, flags);
+
+    if (!pgnutls_pubkey_verify_hash2)
+        return STATUS_NOT_IMPLEMENTED;
+
+    if (!key)
+        return STATUS_INVALID_PARAMETER;
+    if (!padding_info)
+        return STATUS_INVALID_PARAMETER;
+    if (!hash)
+        return STATUS_INVALID_PARAMETER;
+    if (!hash_len)
+        return STATUS_INVALID_PARAMETER;
+    if (!signature)
+        return STATUS_INVALID_PARAMETER;
+    if (!signature_len)
+        return STATUS_INVALID_PARAMETER;
+
+    if (flags & BCRYPT_PAD_PKCS1)
+    {
+        BCRYPT_PKCS1_PADDING_INFO *p = (BCRYPT_PKCS1_PADDING_INFO*)padding_info;
+
+        if (lstrcmpW(BCRYPT_SHA1_ALGORITHM, p->pszAlgId) == 0)
+            hash_algo = GNUTLS_DIG_SHA1;
+    }
+
+    if (hash_algo == GNUTLS_DIG_UNKNOWN)
+        return STATUS_INVALID_PARAMETER;
+
+    hash_data.data = (void*)hash;
+    hash_data.size = hash_len;
+
+    signature_data.data = (void*)signature;
+    signature_data.size = signature_len;
+
+    sign_algo = pgnutls_pk_to_sign(pgnutls_pubkey_get_pk_algorithm (pubkey, NULL), hash_algo);
+
+    ret = pgnutls_pubkey_verify_hash2(pubkey, sign_algo, 0, &hash_data, &signature_data);
+    if (ret < 0)
+    {
+        ERR("gnutls_pubkey_verify_hash2 failed, ret=%d\n", ret);
+        return STATUS_UNSUCCESSFUL;
+    }
+
+    return STATUS_SUCCESS;
+}
+
+NTSTATUS WINAPI BCryptDestroyKey(BCRYPT_KEY_HANDLE key)
+{
+    gnutls_pubkey_t pubkey = (gnutls_pubkey_t)key;
+
+    FIXME("%p - semi-stub\n", key);
+
+    if (!pgnutls_pubkey_deinit)
+        return STATUS_NOT_IMPLEMENTED;
+
+    if (!key)
+        return STATUS_INVALID_PARAMETER;
+
+    pgnutls_pubkey_deinit(pubkey);
+
+    return STATUS_SUCCESS;
 }
 
 BOOL WINAPI DllMain( HINSTANCE hinst, DWORD reason, LPVOID reserved )
