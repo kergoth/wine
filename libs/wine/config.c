@@ -601,10 +601,29 @@ const char *wine_get_version(void)
     return PACKAGE_VERSION;
 }
 
+static const struct
+{
+    const char *author;
+    const char *subject;
+    int revision;
+}
+wine_patch_data[] =
+{
+    { "Michael Müller", "libs/wine: Do not restrict base address of main thread on 64 bit mac os.", 1 },
+    { "Michael Müller", "loader: Add commandline option --check-libs.", 1 },
+    { "Michael Müller", "loader: Print library paths for --check-libs on Mac OS X.", 1 },
+    { "Sebastian Lackner", "configure: Also add the absolute RPATH when linking against libwine.", 1 },
+    { "Sebastian Lackner", "kernel32: Add winediag message to show warning, that this isn't vanilla wine.", 1 },
+    { "Sebastian Lackner", "loader: Add commandline option --patches to show the patch list.", 1 },
+    { "Sebastian Lackner", "loader: Implement preloader for Mac OS.", 1 },
+    { "Sebastian Lackner", "winelib: Append '(Staging)' at the end of the version string.", 1 },
+    { NULL, NULL, 0 }
+};
+
 /* return the applied non-standard patches */
 const void *wine_get_patches(void)
 {
-    return NULL;
+    return &wine_patch_data[0];
 }
 
 /* return the build id string */
