@@ -1268,6 +1268,7 @@ enum wined3d_display_rotation
 #define WINED3D_SRGB_READ_WRITE_CONTROL                         0x00000200
 #define WINED3D_LEGACY_UNBOUND_RESOURCE_COLOR                   0x00000400
 #define WINED3D_NO_PRIMITIVE_RESTART                            0x00000800
+#define WINED3D_NO_CSMT                                         0x00001000
 
 #define WINED3D_RESZ_CODE                                       0x7fa05000
 
@@ -2443,7 +2444,7 @@ ULONG __cdecl wined3d_rendertarget_view_incref(struct wined3d_rendertarget_view 
 void __cdecl wined3d_rendertarget_view_set_parent(struct wined3d_rendertarget_view *view, void *parent);
 
 HRESULT __cdecl wined3d_sampler_create(struct wined3d_device *device, const struct wined3d_sampler_desc *desc,
-        void *parent, struct wined3d_sampler **sampler);
+        void *parent, struct wined3d_sampler **sampler, BOOL from_cs);
 ULONG __cdecl wined3d_sampler_decref(struct wined3d_sampler *sampler);
 void * __cdecl wined3d_sampler_get_parent(const struct wined3d_sampler *sampler);
 ULONG __cdecl wined3d_sampler_incref(struct wined3d_sampler *sampler);

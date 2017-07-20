@@ -390,6 +390,7 @@
 @ stdcall SHGetNewLinkInfo(str str ptr long long) SHGetNewLinkInfoA
 @ stdcall SHGetPathFromIDList(ptr ptr) SHGetPathFromIDListA
 @ stdcall SHGetPathFromIDListA(ptr ptr)
+@ stdcall SHGetPathFromIDListEx(ptr ptr long long)
 @ stdcall SHGetPathFromIDListW(ptr ptr)
 @ stdcall SHGetPropertyStoreForWindow(long ptr ptr)
 @ stdcall SHGetPropertyStoreFromParsingName(wstr ptr long ptr ptr)
@@ -477,3 +478,5 @@
 @ stdcall StrStrIW(wstr wstr) shlwapi.StrStrIW
 @ stdcall StrStrW(wstr wstr) shlwapi.StrStrW
 @ stdcall WOWShellExecute(long str str str str long ptr)
+
+@ stdcall wine_update_symbolic_links()

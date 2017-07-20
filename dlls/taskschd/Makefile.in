@@ -11,3 +11,5 @@ C_SRCS = \
 IDL_SRCS = \
 	schrpc.idl \
 	taskschd_tlb.idl
+
+folder_EXTRADEFS = $(FORCE_ALIGN_ARG_BUG_CFLAGS)

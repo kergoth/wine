@@ -923,6 +923,16 @@ static HMODULE load_library( const UNICODE_STRING *libname, DWORD flags )
 
     load_path = MODULE_get_dll_load_path( flags & LOAD_WITH_ALTERED_SEARCH_PATH ? libname->Buffer : NULL );
 
+    /*
+     * CXHACK 14391: Click2Run depends on flags & LOAD_LIBRARY_AS_IMAGE_RESOURCE. We ignore
+     * LOAD_LIBRARY_AS_IMAGE_RESOURCE as using LdrLoadDll works fine in this case.
+     */
+    if (flags & LOAD_LIBRARY_AS_IMAGE_RESOURCE)
+    {
+        FIXME("CXHACK: LOAD_LIBRARY_AS_IMAGE_RESOURCE flag.\n");
+        flags &= ~LOAD_LIBRARY_AS_DATAFILE;
+    }
+
     if (flags & LOAD_LIBRARY_AS_DATAFILE)
     {
         ULONG_PTR magic;

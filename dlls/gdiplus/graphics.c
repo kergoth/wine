@@ -348,7 +348,18 @@ static void gdi_alpha_blend(GpGraphics *graphics, INT dst_x, INT dst_y, INT dst_
 static GpStatus get_clip_hrgn(GpGraphics *graphics, HRGN *hrgn)
 {
     /* clipping region is in device coords */
-    return GdipGetRegionHRgn(graphics->clip, NULL, hrgn);
+    GpStatus status = GdipGetRegionHRgn(graphics->clip, NULL, hrgn);
+    if ( status == Ok && graphics->hdc)
+    {
+        POINT pt = {0, 0};
+        LPtoDP(graphics->hdc, &pt, 1);
+        if (pt.x!=0 || pt.y!=0)
+        {
+            OffsetRgn(*hrgn, pt.x, pt.y);
+        }
+    }
+
+    return status;
 }
 
 /* Draw ARGB data to the given graphics object */
@@ -4432,10 +4443,23 @@ static GpStatus SOFTWARE_GdipFillRegion(GpGraphics *graphics, GpBrush *brush,
                 &gp_bound_rect, gp_bound_rect.Width);
 
             if (stat == Ok)
+            {
+                /*Because the ExtSelectClipRgn in alpha_blend_pixels_hrgn use gdi32 device coordinate
+                 So check if need perform a conversion */
+                if (graphics->hdc)
+                {
+                    POINT pt = {0, 0};
+                    LPtoDP(graphics->hdc, &pt, 1);
+                    if (pt.x!=0 || pt.y!=0)
+                    {
+                        OffsetRgn (hregion, pt.x, pt.y);
+                    }
+                }
                 stat = alpha_blend_pixels_hrgn(graphics, gp_bound_rect.X,
                     gp_bound_rect.Y, (BYTE*)pixel_data, gp_bound_rect.Width,
                     gp_bound_rect.Height, gp_bound_rect.Width * 4, hregion,
                     PixelFormat32bppARGB);
+            }
 
             heap_free(pixel_data);
         }

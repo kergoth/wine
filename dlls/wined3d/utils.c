@@ -5261,7 +5261,9 @@ void gen_ffp_frag_op(const struct wined3d_context *context, const struct wined3d
                         break;
                 }
             }
-        } else {
+        }
+        else
+        {
             settings->op[i].color_fixup = COLOR_FIXUP_IDENTITY;
             settings->op[i].tex_type = WINED3D_GL_RES_TYPE_TEX_1D;
         }

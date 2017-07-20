@@ -153,8 +153,14 @@ static const struct
     { CF_PENDATA,           CFSTR("org.winehq.builtin.pendata"),            import_clipboard_data,          export_clipboard_data,      FALSE },
     { CF_RIFF,              CFSTR("org.winehq.builtin.riff"),               import_clipboard_data,          export_clipboard_data,      FALSE },
     { CF_SYLK,              CFSTR("org.winehq.builtin.sylk"),               import_clipboard_data,          export_clipboard_data,      FALSE },
+
     { CF_TEXT,              CFSTR("org.winehq.builtin.text"),               import_clipboard_data,          export_clipboard_data,      FALSE },
+#if 1 /* CodeWeavers Hack #12338: don't map CF_TIFF to Mac-native type since we don't ship libtiff */
+    { CF_TIFF,              CFSTR("org.winehq.builtin.tiff"),               import_clipboard_data,          export_clipboard_data,      FALSE },
+#else
     { CF_TIFF,              CFSTR("public.tiff"),                           import_clipboard_data,          export_clipboard_data,      FALSE },
+#endif
+
     { CF_WAVE,              CFSTR("com.microsoft.waveform-audio"),          import_clipboard_data,          export_clipboard_data,      FALSE },
 
     { CF_DIB,               CFSTR("org.winehq.builtin.dib"),                import_clipboard_data,          export_clipboard_data,      FALSE },
@@ -200,6 +206,7 @@ static BOOL is_clipboard_owner;
 static macdrv_window clipboard_cocoa_window;
 static UINT rendered_formats;
 static ULONG64 last_clipboard_update;
+static DWORD last_get_seqno;
 static WINE_CLIPFORMAT **current_mac_formats;
 static unsigned int nb_current_mac_formats;
 static WCHAR clipboard_pipe_name[256];
@@ -1819,6 +1826,7 @@ static LRESULT CALLBACK clipboard_wndproc(HWND hwnd, UINT msg, WPARAM wp, LPARAM
             return TRUE;
         case WM_CLIPBOARDUPDATE:
             if (is_clipboard_owner) break;  /* ignore our own changes */
+            if ((LONG)(GetClipboardSequenceNumber() - last_get_seqno) <= 0) break;
             set_mac_pasteboard_types_from_win32_clipboard();
             break;
         case WM_RENDERFORMAT:
@@ -2219,6 +2227,8 @@ BOOL query_pasteboard_data(HWND hwnd, CFStringRef type)
             CFRelease(data);
         }
     }
+
+    last_get_seqno = GetClipboardSequenceNumber();
 
     CloseClipboard();
 

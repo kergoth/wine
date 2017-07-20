@@ -20,6 +20,9 @@
  * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301, USA
  */
 
+#include <stdio.h>
+#include <unistd.h>
+
 #define COBJMACROS
 
 #include "wine/unicode.h"
@@ -593,9 +596,27 @@ static IShellFolder* get_starting_shell_folder(parameters_struct* params)
 {
     IShellFolder* desktop,*folder;
     LPITEMIDLIST root_pidl;
+#ifdef __ANDROID__
+    ITEMIDLIST *favorites_pidl;
+#endif
     HRESULT hres;
 
     SHGetDesktopFolder(&desktop);
+#ifdef __ANDROID__
+    hres = SHGetSpecialFolderLocation(NULL, CSIDL_FAVORITES, &favorites_pidl);
+    if (SUCCEEDED(hres))
+    {
+        hres = IShellFolder_BindToObject(desktop, favorites_pidl, NULL,
+                                         &IID_IShellFolder, (void **)&folder);
+        CoTaskMemFree(favorites_pidl);
+        if (SUCCEEDED(hres))
+        {
+            IShellFolder_Release(desktop);
+            return folder;
+        }
+    }
+#endif
+
     if (!params->root[0])
     {
         return desktop;
@@ -745,6 +766,25 @@ int WINAPI wWinMain(HINSTANCE hinstance,
     INITCOMMONCONTROLSEX init_info;
 
     memset(&parameters,0,sizeof(parameters));
+
+    /*  CodeWeavers-specific hack:  We need to exclude ourselves
+        from the winewrapper's wait-children process.  So we'll
+        close the wait-children pipe if it is defined.  */
+    {
+        char *waitchild_envstring;
+        unsigned int waitchild_pipeid;
+        waitchild_envstring = getenv("WINE_WAIT_CHILD_PIPE");
+        if (waitchild_envstring)
+        {
+            waitchild_pipeid = atoi(waitchild_envstring);
+            if (waitchild_pipeid)
+            { 
+                close(waitchild_pipeid);
+            }
+            unsetenv("WINE_WAIT_CHILD_PIPE");
+        }
+    }
+
     explorer_hInstance = hinstance;
     parse_command_line(cmdline,&parameters);
     hres = OleInitialize(NULL);

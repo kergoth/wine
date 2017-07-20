@@ -211,6 +211,62 @@ static NSString* WineLocalizedString(unsigned int stringID)
         [super dealloc];
     }
 
+    // CrossOver Hack 10912: Mac Edit menu
+    - (BOOL) isEditMenuAction:(SEL)selector
+    {
+        return selector == @selector(copy:) || selector == @selector(cut:) ||
+               selector == @selector(delete:) || selector == @selector(paste:) ||
+               selector == @selector(selectAll:) || selector == @selector(undo:);
+    }
+
+    - (void) changeEditMenuKeyEquivalentsForWindow:(NSWindow*)window
+    {
+        if (mac_edit_menu == MAC_EDIT_MENU_DISABLED)
+        {
+            if ([window isKindOfClass:[WineWindow class]])
+            {
+                NSMutableArray* menus = [NSMutableArray arrayWithObject:[NSApp mainMenu]];
+
+                while ([menus count])
+                {
+                    NSMenu* menu = [menus objectAtIndex:0];
+                    [menus removeObjectAtIndex:0];
+
+                    for (NSMenuItem* item in [menu itemArray])
+                    {
+                        if ([self isEditMenuAction:[item action]] && ![item target] &&
+                            [[item keyEquivalent] length])
+                        {
+                            NSDictionary* record = [NSDictionary dictionaryWithObjectsAndKeys:
+                                                    item, @"menuItem",
+                                                    [item keyEquivalent], @"keyEquivalent",
+                                                    nil];
+                            if (!changedKeyEquivalents)
+                                changedKeyEquivalents = [[NSMutableArray alloc] init];
+                            [changedKeyEquivalents addObject:record];
+
+                            [item setKeyEquivalent:@""];
+                        }
+
+                        if ([item hasSubmenu])
+                            [menus addObject:[item submenu]];
+                    }
+                }
+            }
+            else
+            {
+                for (NSDictionary* record in changedKeyEquivalents)
+                {
+                    NSMenuItem* item = [record objectForKey:@"menuItem"];
+                    NSString* equiv = [record objectForKey:@"keyEquivalent"];
+                    [item setKeyEquivalent:equiv];
+                }
+
+                [changedKeyEquivalents removeAllObjects];
+            }
+        }
+    }
+
     - (void) transformProcessToForeground
     {
         if ([NSApp activationPolicy] != NSApplicationActivationPolicyRegular)
@@ -258,6 +314,23 @@ static NSString* WineLocalizedString(unsigned int stringID)
             [item setSubmenu:submenu];
             [mainMenu addItem:item];
 
+            // CrossOver Hack 10912: Mac Edit menu
+            if (mac_edit_menu != MAC_EDIT_MENU_DISABLED)
+            {
+                submenu = [[[NSMenu alloc] initWithTitle:@"Edit"] autorelease];
+                [submenu addItemWithTitle:@"Undo" action:@selector(undo:) keyEquivalent:@"z"];
+                [submenu addItem:[NSMenuItem separatorItem]];
+                [submenu addItemWithTitle:@"Cut" action:@selector(cut:) keyEquivalent:@"x"];
+                [submenu addItemWithTitle:@"Copy" action:@selector(copy:) keyEquivalent:@"c"];
+                [submenu addItemWithTitle:@"Paste" action:@selector(paste:) keyEquivalent:@"v"];
+                [submenu addItemWithTitle:@"Delete" action:@selector(delete:) keyEquivalent:@""];
+                [submenu addItemWithTitle:@"Select All" action:@selector(selectAll:) keyEquivalent:@"a"];
+                item = [[[NSMenuItem alloc] init] autorelease];
+                [item setTitle:@"Edit"];
+                [item setSubmenu:submenu];
+                [mainMenu addItem:item];
+            }
+
             // Window menu
             submenu = [[[NSMenu alloc] initWithTitle:WineLocalizedString(STRING_MENU_WINDOW)] autorelease];
             [submenu addItemWithTitle:WineLocalizedString(STRING_MENU_ITEM_MINIMIZE)
@@ -284,6 +357,9 @@ static NSString* WineLocalizedString(unsigned int stringID)
 
             [NSApp setMainMenu:mainMenu];
             [NSApp setWindowsMenu:submenu];
+
+            // CrossOver Hack 10912: Mac Edit menu
+            [self changeEditMenuKeyEquivalentsForWindow:[NSApp keyWindow]];
 
             [NSApp setApplicationIconImage:self.applicationIcon];
         }
@@ -2053,6 +2129,16 @@ static NSString* WineLocalizedString(unsigned int stringID)
             NSWindow* window = [note object];
             [keyWindows removeObjectIdenticalTo:window];
             [keyWindows insertObject:window atIndex:0];
+            // CrossOver Hack 10912: Mac Edit menu
+            [self changeEditMenuKeyEquivalentsForWindow:window];
+        }];
+
+        // CrossOver Hack 10912: Mac Edit menu
+        [nc addObserverForName:NSWindowDidResignKeyNotification
+                        object:nil
+                         queue:nil
+                    usingBlock:^(NSNotification *note){
+            [self changeEditMenuKeyEquivalentsForWindow:nil];
         }];
 
         [nc addObserverForName:NSWindowWillCloseNotification
@@ -2625,12 +2711,21 @@ int macdrv_clip_cursor(CGRect r)
  * color depths from the icon resource.  If images is NULL or empty,
  * restores the default application image.
  */
-void macdrv_set_application_icon(CFArrayRef images)
+void macdrv_set_application_icon(CFArrayRef images, CFURLRef urlRef)
 {
     NSArray* imageArray = (NSArray*)images;
+    NSURL* url = (NSURL*)urlRef;
 
     OnMainThreadAsync(^{
-        [[WineApplicationController sharedController] setApplicationIconFromCGImageArray:imageArray];
+        // CrossOver Hack 13440: Get the icon from the passed-in URL if no images
+        WineApplicationController* controller = [WineApplicationController sharedController];
+        NSImage* image = nil;
+        if (!imageArray && url)
+            image = [[[NSImage alloc] initWithContentsOfURL:url] autorelease];
+        if (imageArray || ![image isValid])
+            [controller setApplicationIconFromCGImageArray:imageArray];
+        else
+            controller.applicationIcon = image;
     });
 }
 

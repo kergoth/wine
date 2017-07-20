@@ -114,7 +114,7 @@ static BOOL init_driver(void)
     static const WCHAR drv_value[] = {'A','u','d','i','o',0};
 
     static WCHAR default_list[] = {'p','u','l','s','e',',','a','l','s','a',',','o','s','s',',',
-        'c','o','r','e','a','u','d','i','o',0};
+        'c','o','r','e','a','u','d','i','o',',','a','n','d','r','o','i','d',0};
 
     DriverFuncs driver;
     HKEY key;

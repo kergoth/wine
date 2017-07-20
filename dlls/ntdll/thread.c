@@ -297,6 +297,7 @@ HANDLE thread_init(void)
     teb->Tib.StackBase = (void *)~0UL;
     teb->StaticUnicodeString.Buffer = teb->StaticUnicodeBuffer;
     teb->StaticUnicodeString.MaximumLength = sizeof(teb->StaticUnicodeBuffer);
+    teb->ThreadLocalStoragePointer = teb->TlsSlots;
 
     thread_data = (struct ntdll_thread_data *)teb->SpareBytes1;
     thread_data->request_fd = -1;
@@ -532,6 +533,7 @@ NTSTATUS WINAPI RtlCreateUserThread( HANDLE process, const SECURITY_DESCRIPTOR *
     teb->ClientId.UniqueThread  = ULongToHandle(tid);
     teb->StaticUnicodeString.Buffer        = teb->StaticUnicodeBuffer;
     teb->StaticUnicodeString.MaximumLength = sizeof(teb->StaticUnicodeBuffer);
+    teb->ThreadLocalStoragePointer = teb->TlsSlots;
 
     /* create default activation context frame for new thread */
     RtlGetActiveActivationContext(&actctx);
@@ -1151,6 +1153,31 @@ NTSTATUS WINAPI NtQueryInformationThread( HANDLE handle, THREADINFOCLASS class,
             }
         }
         return status;
+    case ThreadIsIoPending:
+    { /* CrossOver hack for bug 14503 */
+        LDR_MODULE *pldr;
+
+        FIXME( "ThreadIsIoPending info class not supported yet\n" );
+
+        status = LdrFindEntryForAddress( NtCurrentTeb()->Peb->ImageBaseAddress, &pldr );
+        if (status == STATUS_SUCCESS)
+        {
+            static const WCHAR qwexe[] = {'q','w','.','e','x','e'};
+            int i, len = pldr->FullDllName.Length/sizeof(WCHAR);
+
+            for (i = 0; i < len; i++)
+                if (pldr->FullDllName.Buffer[len-i-1] == '\\') break;
+            if (i >= sizeof(qwexe)/sizeof(WCHAR) && !memcmp(pldr->FullDllName.Buffer+len-i, qwexe, sizeof(qwexe)))
+            {
+                FIXME("Quicken ThreadIsIoPending hack\n");
+                if (length != sizeof(BOOL)) return STATUS_INFO_LENGTH_MISMATCH;
+                *(BOOL*)data = FALSE;
+                if (ret_len) *ret_len = sizeof(BOOL);
+                return STATUS_SUCCESS;
+            }
+        }
+        return STATUS_NOT_IMPLEMENTED;
+    }
     case ThreadPriority:
     case ThreadBasePriority:
     case ThreadImpersonationToken:
@@ -1161,7 +1188,6 @@ NTSTATUS WINAPI NtQueryInformationThread( HANDLE handle, THREADINFOCLASS class,
     case ThreadIdealProcessor:
     case ThreadPriorityBoost:
     case ThreadSetTlsArrayAddress:
-    case ThreadIsIoPending:
     default:
         FIXME( "info class %d not supported yet\n", class );
         return STATUS_NOT_IMPLEMENTED;

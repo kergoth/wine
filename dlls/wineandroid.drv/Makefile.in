@@ -1,0 +1,104 @@
+MODULE    = wineandroid.drv
+IMPORTS   = uuid user32 gdi32 advapi32 ole32 psapi
+DELAYIMPORTS = imm32 ntoskrnl
+ANDROID_TOP_LIB_DIR = wineandroid
+ANDROID_LIB_DIR = $(ANDROID_TOP_LIB_DIR)/src/main
+
+C_SRCS = \
+	clipboard.c \
+	device.c \
+	gamepad.c \
+	ime.c \
+	init.c \
+	mmdevdrv.c \
+	opengl.c \
+	window.c \
+	keyboard.c
+
+RC_SRCS = version.rc
+
+JAVA_SRCS = \
+	WineDriver.java \
+	WineProvider.java
+
+ANDROID_PROJECT_SRCS = \
+	AndroidManifest.xml \
+	build.gradle
+
+ANDROID_VALUE_RES_SRCS = \
+	strings.xml
+
+# Manual dependencies
+
+.PHONY: install-lib
+
+install-lib:: $(JAVA_SRCS:%=$(ANDROID_LIB_DIR)/java/org/winehq/wine/%) \
+			 $(ANDROID_TOP_LIB_DIR)/build.gradle \
+			 $(ANDROID_TOP_LIB_DIR)/gradlew \
+			 $(ANDROID_TOP_LIB_DIR)/gradle/wrapper/gradle-wrapper.jar \
+			 $(ANDROID_TOP_LIB_DIR)/gradle/wrapper/gradle-wrapper.properties \
+			 $(ANDROID_LIB_DIR)/AndroidManifest.xml \
+			 $(ANDROID_VALUE_RES_SRCS:%=$(ANDROID_LIB_DIR)/res/values/%) \
+			 $(ANDROID_LIB_DIR)/res/drawable-ldpi/wine_launcher.png \
+			 $(ANDROID_LIB_DIR)/res/drawable-mdpi/wine_launcher.png \
+			 $(ANDROID_LIB_DIR)/res/drawable-hdpi/wine_launcher.png \
+			 $(ANDROID_LIB_DIR)/res/drawable-xhdpi/wine_launcher.png
+	cd $(ANDROID_TOP_LIB_DIR) && ./gradlew build --console plain
+
+$(ANDROID_LIB_DIR)/java/org/winehq/wine/WineDriver.java: $(srcdir)/WineDriver.java
+	mkdir -p `dirname $@`
+	cp $(srcdir)/WineDriver.java $@
+
+$(ANDROID_LIB_DIR)/java/org/winehq/wine/WineProvider.java: $(srcdir)/WineProvider.java
+	mkdir -p `dirname $@`
+	cp $(srcdir)/WineProvider.java $@
+
+$(ANDROID_LIB_DIR)/AndroidManifest.xml: $(srcdir)/AndroidManifest.xml
+	mkdir -p `dirname $@`
+	cp $(srcdir)/AndroidManifest.xml $@
+
+$(ANDROID_TOP_LIB_DIR)/build.gradle: $(srcdir)/build.gradle
+	mkdir -p `dirname $@`
+	cp $(srcdir)/build.gradle $@
+
+$(ANDROID_TOP_LIB_DIR)/gradlew: $(srcdir)/gradlew
+	mkdir -p `dirname $@`
+	cp $(srcdir)/gradlew $@
+
+$(ANDROID_TOP_LIB_DIR)/gradle/wrapper/gradle-wrapper.jar: $(srcdir)/gradle-wrapper.jar
+	mkdir -p `dirname $@`
+	cp $(srcdir)/gradle-wrapper.jar $@
+
+$(ANDROID_TOP_LIB_DIR)/gradle/wrapper/gradle-wrapper.properties: $(srcdir)/gradle-wrapper.properties
+	mkdir -p `dirname $@`
+	cp $(srcdir)/gradle-wrapper.properties $@
+
+$(ANDROID_LIB_DIR)/res/values/strings.xml: $(srcdir)/strings.xml
+	mkdir -p `dirname $@`
+	cp $(srcdir)/strings.xml $@
+
+$(ANDROID_LIB_DIR)/res/drawable-ldpi/wine_launcher.png: $(srcdir)/wine_launcher_ldpi.png
+	mkdir -p `dirname $@`
+	cp $(srcdir)/wine_launcher_ldpi.png $@
+
+$(ANDROID_LIB_DIR)/res/drawable-mdpi/wine_launcher.png: $(srcdir)/wine_launcher_mdpi.png
+	mkdir -p `dirname $@`
+	cp $(srcdir)/wine_launcher_mdpi.png $@
+
+$(ANDROID_LIB_DIR)/res/drawable-hdpi/wine_launcher.png: $(srcdir)/wine_launcher_hdpi.png
+	mkdir -p `dirname $@`
+	cp $(srcdir)/wine_launcher_hdpi.png $@
+
+$(ANDROID_LIB_DIR)/res/drawable-xhdpi/wine_launcher.png: $(srcdir)/wine_launcher_xhdpi.png
+	mkdir -p `dirname $@`
+	cp $(srcdir)/wine_launcher_xhdpi.png $@
+
+wine_launcher_%dpi.png: $(srcdir)/wine_launcher.svg
+	if [ -n "$$RSVG" -a -n "$$CONVERT" ]; \
+	then \
+		if [ $* = "l" ] ; then size=32 ; fi  && \
+		if [ $* = "m" ] ; then size=48 ; fi  && \
+		if [ $* = "h" ] ; then size=72 ; fi  && \
+		if [ $* = "xh" ] ; then size=96 ; fi  && \
+	    RSVG=$(RSVG) CONVERT=$(CONVERT) $(TOOLSDIR)/tools/buildimage $(top_srcdir)/dlls/user32/resources/oic_winlogo.svg $@ --size $$size; \
+	fi

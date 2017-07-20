@@ -58,6 +58,7 @@ MAKE_FUNCPTR(XRRGetCrtcInfo)
 MAKE_FUNCPTR(XRRGetOutputInfo)
 MAKE_FUNCPTR(XRRGetScreenResources)
 MAKE_FUNCPTR(XRRSetCrtcConfig)
+MAKE_FUNCPTR(XRRSetScreenSize)
 static typeof(XRRGetScreenResources) *pXRRGetScreenResourcesCurrent;
 static RRMode *xrandr12_modes;
 static int primary_crtc;
@@ -102,6 +103,7 @@ static int load_xrandr(void)
         LOAD_FUNCPTR(XRRGetOutputInfo)
         LOAD_FUNCPTR(XRRGetScreenResources)
         LOAD_FUNCPTR(XRRSetCrtcConfig)
+        LOAD_FUNCPTR(XRRSetScreenSize)
         r = 2;
 #endif
 #undef LOAD_FUNCPTR
@@ -152,7 +154,7 @@ static int xrandr10_get_current_mode(void)
     return res;
 }
 
-static LONG xrandr10_set_current_mode( int mode )
+static LONG xrandr10_set_current_mode( int mode, struct x11drv_mode_info *mode_info )
 {
     SizeID size;
     Rotation rot;
@@ -320,11 +322,14 @@ static int xrandr12_get_current_mode(void)
     return ret;
 }
 
-static LONG xrandr12_set_current_mode( int mode )
+static LONG xrandr12_set_current_mode( int mode, struct x11drv_mode_info *mode_info )
 {
     Status status = RRSetConfigFailed;
+    Screen *screen;
+    XWindowAttributes attr;
     XRRScreenResources *resources;
     XRRCrtcInfo *crtc_info;
+    unsigned int max_width, max_height;
 
     mode = mode % xrandr_mode_count;
 
@@ -345,16 +350,41 @@ static LONG xrandr12_set_current_mode( int mode )
     TRACE("CRTC %d: mode %#lx, %ux%u+%d+%d.\n", primary_crtc, crtc_info->mode,
           crtc_info->width, crtc_info->height, crtc_info->x, crtc_info->y);
 
+    screen = DefaultScreenOfDisplay( gdi_display );
+    XGetWindowAttributes( gdi_display, root_window, &attr );
+    max_width = max(attr.width, mode_info->width);
+    max_height = max(attr.height, mode_info->height);
+
+    if (crtc_info->width == attr.width && crtc_info->height == attr.height)
+    {
+        if (max_width > attr.width || max_height > attr.height)
+        {
+            TRACE("CRTC matches the whole screen, also changing screen size.\n");
+            pXRRSetScreenSize( gdi_display, root_window, max_width, max_height,
+                               screen->mwidth, screen->mheight );
+        }
+    }
+
     status = pXRRSetCrtcConfig( gdi_display, resources, resources->crtcs[primary_crtc],
                                 CurrentTime, crtc_info->x, crtc_info->y, xrandr12_modes[mode],
                                 crtc_info->rotation, crtc_info->outputs, crtc_info->noutput );
+
+    if (crtc_info->width == attr.width && crtc_info->height == attr.height)
+    {
+        if (mode_info->width < max_width || mode_info->height < max_height)
+        {
+            TRACE("CRTC matches the whole screen, also changing screen size.\n");
+            pXRRSetScreenSize( gdi_display, root_window, mode_info->width, mode_info->height,
+                               screen->mwidth, screen->mheight );
+        }
+    }
 
     pXRRFreeCrtcInfo( crtc_info );
     pXRRFreeScreenResources( resources );
 
     if (status != RRSetConfigSuccess)
     {
-        ERR("Resolution change not successful -- perhaps display has changed?\n");
+        ERR("Resolution change not successful (%u) -- perhaps display has changed?\n", status);
         return DISP_CHANGE_FAILED;
     }
 

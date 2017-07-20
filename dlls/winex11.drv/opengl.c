@@ -306,6 +306,7 @@ static struct opengl_funcs opengl_funcs;
 
 #define USE_GL_FUNC(name) #name,
 static const char *opengl_func_names[] = { ALL_WGL_FUNCS };
+static const char *glu_func_names[] = { ALL_GLU_FUNCS }; /* CrossOver Hack 10798 */
 #undef USE_GL_FUNC
 
 static void X11DRV_WineGL_LoadExtensions(void);
@@ -418,6 +419,12 @@ static Bool (*pglXQueryCurrentRendererIntegerMESA)(int attribute, unsigned int *
 static const char *(*pglXQueryCurrentRendererStringMESA)(int attribute);
 static Bool (*pglXQueryRendererIntegerMESA)(Display *dpy, int screen, int renderer, int attribute, unsigned int *value);
 static const char *(*pglXQueryRendererStringMESA)(Display *dpy, int screen, int renderer, int attribute);
+
+/* OpenML GLX Extensions */
+static Bool (*pglXWaitForSbcOML)( Display *dpy, GLXDrawable drawable,
+        INT64 target_sbc, INT64 *ust, INT64 *msc, INT64 *sbc );
+static INT64 (*pglXSwapBuffersMscOML)( Display *dpy, GLXDrawable drawable,
+        INT64 target_msc, INT64 divisor, INT64 remainder );
 
 /* Standard OpenGL */
 static void (*pglFinish)(void);
@@ -580,6 +587,7 @@ static void *opengl_handle;
 
 static BOOL WINAPI init_opengl( INIT_ONCE *once, void *param, void **context )
 {
+    void *glu_handle;
     char buffer[200];
     int error_base, event_base;
     unsigned int i;
@@ -602,6 +610,20 @@ static BOOL WINAPI init_opengl( INIT_ONCE *once, void *param, void **context )
             goto failed;
         }
     }
+
+#ifdef SONAME_LIBGLU /* CrossOver Hack 10798 */
+    glu_handle = wine_dlopen(SONAME_LIBGLU, RTLD_NOW|RTLD_GLOBAL, buffer, sizeof(buffer));
+    if (glu_handle)
+    {
+        for (i = 0; i < sizeof(glu_func_names)/sizeof(glu_func_names[0]); i++)
+        {
+            if (!(((void **)&opengl_funcs.glu)[i] = wine_dlsym( glu_handle, glu_func_names[i], NULL, 0 )))
+                WARN( "%s not found in libGLU\n", glu_func_names[i] );
+        }
+    }
+    else
+        WARN( "Failed to load libGLU: %s\n", buffer );
+#endif
 
     /* redirect some standard OpenGL functions */
 #define REDIRECT(func) \
@@ -712,7 +734,11 @@ static BOOL WINAPI init_opengl( INIT_ONCE *once, void *param, void **context )
         pglXGetFBConfigAttrib = pglXGetProcAddressARB((const GLubyte *) "glXGetFBConfigAttrib");
         pglXGetVisualFromFBConfig = pglXGetProcAddressARB((const GLubyte *) "glXGetVisualFromFBConfig");
         pglXQueryDrawable = pglXGetProcAddressARB((const GLubyte *) "glXQueryDrawable");
-    } else if (has_extension( WineGLInfo.glxExtensions, "GLX_SGIX_fbconfig")) {
+    } else if(
+#ifdef __APPLE__
+              TRUE ||
+#endif
+              has_extension( WineGLInfo.glxExtensions, "GLX_SGIX_fbconfig")) {
         pglXChooseFBConfig = pglXGetProcAddressARB((const GLubyte *) "glXChooseFBConfigSGIX");
         pglXGetFBConfigAttrib = pglXGetProcAddressARB((const GLubyte *) "glXGetFBConfigAttribSGIX");
         pglXGetVisualFromFBConfig = pglXGetProcAddressARB((const GLubyte *) "glXGetVisualFromFBConfigSGIX");
@@ -749,6 +775,12 @@ static BOOL WINAPI init_opengl( INIT_ONCE *once, void *param, void **context )
                 (const GLubyte *)"glXQueryCurrentRendererStringMESA" );
         pglXQueryRendererIntegerMESA = pglXGetProcAddressARB( (const GLubyte *)"glXQueryRendererIntegerMESA" );
         pglXQueryRendererStringMESA = pglXGetProcAddressARB( (const GLubyte *)"glXQueryRendererStringMESA" );
+    }
+
+    if (has_extension( WineGLInfo.glxExtensions, "GLX_OML_sync_control" ))
+    {
+        pglXWaitForSbcOML = pglXGetProcAddressARB( (const GLubyte *)"glXWaitForSbcOML" );
+        pglXSwapBuffersMscOML = pglXGetProcAddressARB( (const GLubyte *)"glXSwapBuffersMscOML" );
     }
 
     X11DRV_WineGL_LoadExtensions();
@@ -3299,6 +3331,7 @@ static BOOL glxdrv_wglSwapBuffers( HDC hdc )
     struct x11drv_escape_flush_gl_drawable escape;
     struct gl_drawable *gl;
     struct wgl_context *ctx = NtCurrentTeb()->glContext;
+    INT64 ust, msc, sbc, target_sbc = 0;
 
     TRACE("(%p)\n", hdc);
 
@@ -3331,6 +3364,12 @@ static BOOL glxdrv_wglSwapBuffers( HDC hdc )
                                    gl->rect.right - gl->rect.left, gl->rect.bottom - gl->rect.top );
             break;
         }
+        if (pglXSwapBuffersMscOML)
+        {
+            pglFlush();
+            target_sbc = pglXSwapBuffersMscOML( gdi_display, gl->drawable, 0, 0, 0 );
+            break;
+        }
         pglXSwapBuffers(gdi_display, gl->drawable);
         break;
     case DC_GL_CHILD_WIN:
@@ -3338,9 +3377,18 @@ static BOOL glxdrv_wglSwapBuffers( HDC hdc )
         escape.gl_drawable = gl->window;
         /* fall through */
     default:
+        if (pglXSwapBuffersMscOML)
+        {
+            pglFlush();
+            target_sbc = pglXSwapBuffersMscOML( gdi_display, gl->drawable, 0, 0, 0 );
+            break;
+        }
         pglXSwapBuffers(gdi_display, gl->drawable);
         break;
     }
+
+    if (escape.gl_drawable && pglXWaitForSbcOML)
+        pglXWaitForSbcOML( gdi_display, gl->drawable, target_sbc, &ust, &msc, &sbc );
 
     release_gl_drawable( gl );
 

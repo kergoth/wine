@@ -1420,18 +1420,26 @@ void context_invalidate_state(struct wined3d_context *context, DWORD state)
 }
 
 /* This function takes care of wined3d pixel format selection. */
-static int context_choose_pixel_format(const struct wined3d_device *device, HDC hdc,
-        const struct wined3d_format *color_format, const struct wined3d_format *ds_format,
+static int context_choose_pixel_format(const struct wined3d_device *device, const struct wined3d_swapchain *swapchain,
+        HDC hdc, const struct wined3d_format *color_format, const struct wined3d_format *ds_format,
         BOOL auxBuffers, BOOL findCompatible)
 {
+    const struct wined3d_gl_info *gl_info = &device->adapter->gl_info;
     int iPixelFormat=0;
     unsigned int current_value;
     unsigned int cfg_count = device->adapter->cfg_count;
+    BOOL double_buffer = TRUE;
     unsigned int i;
 
     TRACE("device %p, dc %p, color_format %s, ds_format %s, aux_buffers %#x, find_compatible %#x.\n",
             device, hdc, debug_d3dformat(color_format->id), debug_d3dformat(ds_format->id),
             auxBuffers, findCompatible);
+
+    /* CrossOver hack for bug 9330. */
+    if ((gl_info->quirks & WINED3D_CX_QUIRK_APPLE_DOUBLE_BUFFER)
+            && wined3d_settings.offscreen_rendering_mode == ORM_FBO
+            && !swapchain->desc.backbuffer_count)
+        double_buffer = FALSE;
 
     current_value = 0;
     for (i = 0; i < cfg_count; ++i)
@@ -1444,7 +1452,7 @@ static int context_choose_pixel_format(const struct wined3d_device *device, HDC 
         if (cfg->iPixelType != WGL_TYPE_RGBA_ARB)
             continue;
         /* In window mode we need a window drawable format and double buffering. */
-        if (!(cfg->windowDrawable && cfg->doubleBuffer))
+        if (!cfg->windowDrawable || (double_buffer && !cfg->doubleBuffer))
             continue;
         if (cfg->redSize < color_format->red_size)
             continue;
@@ -1467,17 +1475,19 @@ static int context_choose_pixel_format(const struct wined3d_device *device, HDC 
          * depth it is no problem to emulate 16-bit using e.g. 24-bit, so accept that. */
         if (cfg->depthSize == ds_format->depth_size)
             value += 1;
-        if (cfg->stencilSize == ds_format->stencil_size)
+        if (!cfg->doubleBuffer == !double_buffer)
             value += 2;
-        if (cfg->alphaSize == color_format->alpha_size)
+        if (cfg->stencilSize == ds_format->stencil_size)
             value += 4;
+        if (cfg->alphaSize == color_format->alpha_size)
+            value += 8;
         /* We like to have aux buffers in backbuffer mode */
         if (auxBuffers && cfg->auxBuffers)
-            value += 8;
+            value += 16;
         if (cfg->redSize == color_format->red_size
                 && cfg->greenSize == color_format->green_size
                 && cfg->blueSize == color_format->blue_size)
-            value += 16;
+            value += 32;
 
         if (value > current_value)
         {
@@ -1498,7 +1508,9 @@ static int context_choose_pixel_format(const struct wined3d_device *device, HDC 
         ZeroMemory(&pfd, sizeof(pfd));
         pfd.nSize      = sizeof(pfd);
         pfd.nVersion   = 1;
-        pfd.dwFlags    = PFD_SUPPORT_OPENGL | PFD_DOUBLEBUFFER | PFD_DRAW_TO_WINDOW;/*PFD_GENERIC_ACCELERATED*/
+        pfd.dwFlags    = PFD_SUPPORT_OPENGL | PFD_DRAW_TO_WINDOW;/*PFD_GENERIC_ACCELERATED*/
+        if (double_buffer)
+            pfd.dwFlags |= PFD_DOUBLEBUFFER;
         pfd.iPixelType = PFD_TYPE_RGBA;
         pfd.cAlphaBits = color_format->alpha_size;
         pfd.cColorBits = color_format->red_size + color_format->green_size
@@ -1768,13 +1780,13 @@ struct wined3d_context *context_create(struct wined3d_swapchain *swapchain,
     }
 
     /* Try to find a pixel format which matches our requirements. */
-    pixel_format = context_choose_pixel_format(device, hdc, color_format, ds_format, auxBuffers, FALSE);
+    pixel_format = context_choose_pixel_format(device, swapchain, hdc, color_format, ds_format, auxBuffers, FALSE);
 
     /* Try to locate a compatible format if we weren't able to find anything. */
     if (!pixel_format)
     {
         TRACE("Trying to locate a compatible pixel format because an exact match failed.\n");
-        pixel_format = context_choose_pixel_format(device, hdc, color_format, ds_format, auxBuffers, TRUE);
+        pixel_format = context_choose_pixel_format(device, swapchain, hdc, color_format, ds_format, auxBuffers, TRUE);
     }
 
     /* If we still don't have a pixel format, something is very wrong as ChoosePixelFormat barely fails */
@@ -3499,8 +3511,12 @@ BOOL context_apply_draw_state(struct wined3d_context *context,
         for (i = 0, map = context->stream_info.use_map; map; map >>= 1, ++i)
         {
             if (map & 1)
-                buffer_mark_used(state->streams[context->stream_info.elements[i].stream_idx].buffer);
+                wined3d_buffer_load(state->streams[context->stream_info.elements[i].stream_idx].buffer,
+                        context, state);
         }
+        /* PreLoad may kick buffers out of vram. */
+        if (isStateDirty(context, STATE_STREAMSRC))
+            context_update_stream_info(context, state);
     }
     if (state->index_buffer)
     {
@@ -3624,6 +3640,9 @@ struct wined3d_context *context_acquire(const struct wined3d_device *device, str
     struct wined3d_context *context;
 
     TRACE("device %p, target %p.\n", device, target);
+
+    if (wined3d_use_csmt(device) && device->cs->thread_id != GetCurrentThreadId())
+        FIXME("Acquiring a GL context from outside the CS thread.\n");
 
     if (current_context && current_context->destroyed)
         current_context = NULL;

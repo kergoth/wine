@@ -7672,6 +7672,7 @@ static const struct
     const WCHAR *action;
     UINT (*handler)(MSIPACKAGE *);
     const WCHAR *action_rollback;
+    BOOL disable_wow64_redir; /* CROSSOVER HACK bug 13792 */
 }
 StandardActions[] =
 {
@@ -7681,19 +7682,19 @@ StandardActions[] =
     { szCCPSearch, ACTION_CCPSearch, NULL },
     { szCostFinalize, ACTION_CostFinalize, NULL },
     { szCostInitialize, ACTION_CostInitialize, NULL },
-    { szCreateFolders, ACTION_CreateFolders, szRemoveFolders },
+    { szCreateFolders, ACTION_CreateFolders, szRemoveFolders, TRUE },
     { szCreateShortcuts, ACTION_CreateShortcuts, szRemoveShortcuts },
     { szDeleteServices, ACTION_DeleteServices, szInstallServices },
     { szDisableRollback, ACTION_DisableRollback, NULL },
-    { szDuplicateFiles, ACTION_DuplicateFiles, szRemoveDuplicateFiles },
+    { szDuplicateFiles, ACTION_DuplicateFiles, szRemoveDuplicateFiles, TRUE },
     { szExecuteAction, ACTION_ExecuteAction, NULL },
-    { szFileCost, ACTION_FileCost, NULL },
+    { szFileCost, ACTION_FileCost, NULL, TRUE },
     { szFindRelatedProducts, ACTION_FindRelatedProducts, NULL },
     { szForceReboot, ACTION_ForceReboot, NULL },
     { szInstallAdminPackage, ACTION_InstallAdminPackage, NULL },
     { szInstallExecute, ACTION_InstallExecute, NULL },
     { szInstallExecuteAgain, ACTION_InstallExecute, NULL },
-    { szInstallFiles, ACTION_InstallFiles, szRemoveFiles },
+    { szInstallFiles, ACTION_InstallFiles, szRemoveFiles, TRUE },
     { szInstallFinalize, ACTION_InstallFinalize, NULL },
     { szInstallInitialize, ACTION_InstallInitialize, NULL },
     { szInstallODBC, ACTION_InstallODBC, szRemoveODBC },
@@ -7703,7 +7704,7 @@ StandardActions[] =
     { szIsolateComponents, ACTION_IsolateComponents, NULL },
     { szLaunchConditions, ACTION_LaunchConditions, NULL },
     { szMigrateFeatureStates, ACTION_MigrateFeatureStates, NULL },
-    { szMoveFiles, ACTION_MoveFiles, NULL },
+    { szMoveFiles, ACTION_MoveFiles, NULL, TRUE },
     { szMsiPublishAssemblies, ACTION_MsiPublishAssemblies, szMsiUnpublishAssemblies },
     { szMsiUnpublishAssemblies, ACTION_MsiUnpublishAssemblies, szMsiPublishAssemblies },
     { szPatchFiles, ACTION_PatchFiles, NULL },
@@ -7720,12 +7721,12 @@ StandardActions[] =
     { szRegisterProgIdInfo, ACTION_RegisterProgIdInfo, szUnregisterProgIdInfo },
     { szRegisterTypeLibraries, ACTION_RegisterTypeLibraries, szUnregisterTypeLibraries },
     { szRegisterUser, ACTION_RegisterUser, NULL },
-    { szRemoveDuplicateFiles, ACTION_RemoveDuplicateFiles, szDuplicateFiles },
+    { szRemoveDuplicateFiles, ACTION_RemoveDuplicateFiles, szDuplicateFiles, TRUE },
     { szRemoveEnvironmentStrings, ACTION_RemoveEnvironmentStrings, szWriteEnvironmentStrings },
     { szRemoveExistingProducts, ACTION_RemoveExistingProducts, NULL },
-    { szRemoveFiles, ACTION_RemoveFiles, szInstallFiles },
-    { szRemoveFolders, ACTION_RemoveFolders, szCreateFolders },
-    { szRemoveIniValues, ACTION_RemoveIniValues, szWriteIniValues },
+    { szRemoveFiles, ACTION_RemoveFiles, szInstallFiles, TRUE },
+    { szRemoveFolders, ACTION_RemoveFolders, szCreateFolders, TRUE },
+    { szRemoveIniValues, ACTION_RemoveIniValues, szWriteIniValues, TRUE },
     { szRemoveODBC, ACTION_RemoveODBC, szInstallODBC },
     { szRemoveRegistryValues, ACTION_RemoveRegistryValues, szWriteRegistryValues },
     { szRemoveShortcuts, ACTION_RemoveShortcuts, szCreateShortcuts },
@@ -7759,6 +7760,15 @@ static BOOL ACTION_HandleStandardAction( MSIPACKAGE *package, LPCWSTR action, UI
     BOOL ret = FALSE;
     UINT i;
 
+/* CROSSOVER HACK bug 13792 - Disable wow64 redirection when working with files
+ * in 64-bit packages and 32-bit processes. */
+#if __i386__
+    BOOL disable_wow64_redir = (package->platform == PLATFORM_X64 || package->platform == PLATFORM_INTEL64);
+#else
+    BOOL disable_wow64_redir = FALSE;
+#endif
+    void *old_redir_value;
+
     i = 0;
     while (StandardActions[i].action != NULL)
     {
@@ -7768,7 +7778,15 @@ static BOOL ACTION_HandleStandardAction( MSIPACKAGE *package, LPCWSTR action, UI
             if (StandardActions[i].handler)
             {
                 ui_actioninfo( package, action, TRUE, 0 );
+
+                if (disable_wow64_redir && StandardActions[i].disable_wow64_redir)
+                    Wow64DisableWow64FsRedirection( &old_redir_value );
+
                 *rc = StandardActions[i].handler( package );
+
+                if (disable_wow64_redir && StandardActions[i].disable_wow64_redir)
+                    Wow64RevertWow64FsRedirection( old_redir_value );
+
                 ui_actioninfo( package, action, FALSE, *rc );
 
                 if (StandardActions[i].action_rollback && !package->need_rollback)
@@ -7796,6 +7814,16 @@ UINT ACTION_PerformAction(MSIPACKAGE *package, const WCHAR *action, UINT script)
     BOOL handled;
 
     TRACE("Performing action (%s)\n", debugstr_w(action));
+
+    /* CrossOver Hack #12413 for Quicken 2015 Premier. Don't install the PDF driver */
+    {
+        static const WCHAR pdf[] = {'I','n','s','t','a','l','l','P','D','F','D','r','i','v','e','r',0};
+        if (!strcmpiW(action, pdf))
+        {
+            FIXME("HACK: Skipping installation of pdf driver\n");
+            return rc;
+        }
+    }
 
     handled = ACTION_HandleStandardAction(package, action, &rc);
 

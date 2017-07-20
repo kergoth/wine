@@ -116,6 +116,7 @@ static struct opengl_funcs opengl_funcs;
 
 #define USE_GL_FUNC(name) #name,
 static const char *opengl_func_names[] = { ALL_WGL_FUNCS };
+static const char *glu_func_names[] = { ALL_GLU_FUNCS }; /* CrossOver Hack 10798 */
 #undef USE_GL_FUNC
 
 
@@ -1477,7 +1478,7 @@ static BOOL create_context(struct wgl_context *context, CGLContextObj share, uns
         attribs[n++] = pf->samples;
     }
 
-    if (pf->backing_store)
+    if (force_backing_store || pf->backing_store) /* CrossOver Hack 14364 */
         attribs[n++] = kCGLPFABackingStore;
 
 #if defined(MAC_OS_X_VERSION_10_7) && MAC_OS_X_VERSION_MAX_ALLOWED >= MAC_OS_X_VERSION_10_7
@@ -4273,6 +4274,13 @@ static BOOL init_opengl(void)
             ERR("%s not found in OpenGL, disabling.\n", opengl_func_names[i]);
             goto failed;
         }
+    }
+
+    /* CrossOver Hack 10798 */
+    for (i = 0; i < sizeof(glu_func_names)/sizeof(glu_func_names[0]); i++)
+    {
+        if (!(((void **)&opengl_funcs.glu)[i] = wine_dlsym(opengl_handle, glu_func_names[i], NULL, 0)))
+            WARN("%s not found in OpenGL\n", glu_func_names[i]);
     }
 
     /* redirect some standard OpenGL functions */

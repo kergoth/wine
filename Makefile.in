@@ -120,6 +120,31 @@ clean:: __clean__
 distclean:: clean
 	$(RM) -r autom4te.cache documentation/html documentation/api-guide documentation/api-guide-xml documentation/man$(api_manext)
 
+UNWANTED_FILES = \
+	$(DESTDIR)$(bindir)/msiexec \
+	$(DESTDIR)$(bindir)/notepad \
+	$(DESTDIR)$(bindir)/regedit \
+	$(DESTDIR)$(bindir)/regsvr32 \
+	$(DESTDIR)$(bindir)/wineboot \
+	$(DESTDIR)$(bindir)/winecfg \
+	$(DESTDIR)$(bindir)/wineconsole \
+	$(DESTDIR)$(bindir)/winedbg \
+	$(DESTDIR)$(bindir)/winefile \
+	$(DESTDIR)$(bindir)/winemine \
+	$(DESTDIR)$(bindir)/winepath \
+	$(DESTDIR)$(dlldir)/icinfo.exe.so \
+	$(DESTDIR)$(dlldir)/clock.exe.so \
+	$(DESTDIR)$(dlldir)/progman.exe.so \
+	$(DESTDIR)$(dlldir)/view.exe.so \
+	$(DESTDIR)$(dlldir)/winemine.exe.so
+
+install-image: install-lib
+# Get rid of the files we don't want in the image
+	$(RM) -r $(DESTDIR)$(mandir) $(DESTDIR)$(datadir)/applications $(UNWANTED_FILES)
+# Rename the wine loader (don't ask)
+	test x$(filter wine,$(WINELOADER_PROGRAMS)) = x || mv $(DESTDIR)$(bindir)/wine $(DESTDIR)$(bindir)/wineloader
+	test x$(filter wine64,$(WINELOADER_PROGRAMS)) = x || mv $(DESTDIR)$(bindir)/wine64 $(DESTDIR)$(bindir)/wineloader64
+
 # Rules for uninstalling
 
 .PHONY: install install-lib install-dev uninstall __uninstall__
@@ -162,3 +187,8 @@ TAGS etags:
 tags ctags:
 	$(RM) tags
 	(test -d .git && git ls-files || find -L $(top_srcdir) -name '*.[ch]' -print) | xargs ctags -a $(TAGSFLAGS)
+
+# Manual dependencies
+
+dlls/wineandroid.drv/install-lib:: dlls/wineandroid.drv
+	@cd dlls/wineandroid.drv && $(MAKE) install-lib

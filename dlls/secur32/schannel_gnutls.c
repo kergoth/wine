@@ -174,6 +174,9 @@ BOOL schan_imp_create_session(schan_imp_session *session, schan_credentials *cre
         return FALSE;
     }
 
+    /* HACK for CrossOver bug 12357 */
+    if (pgnutls_cipher_get_block_size == compat_cipher_get_block_size) strcpy(priority, "NORMAL");
+
     p = priority + strlen(priority);
     for(i=0; i < sizeof(protocol_priority_flags)/sizeof(*protocol_priority_flags); i++) {
         *p++ = ':';
@@ -494,6 +497,18 @@ BOOL schan_imp_init(void)
 {
     int ret;
 
+if (1) { /* CROSSOVER HACK - bug 10151 */
+    const char *libgnutls_name_candidates[] = {SONAME_LIBGNUTLS,
+                                               "libgnutls.so.30",
+                                               "libgnutls.so.28",
+                                               "libgnutls-deb0.so.28",
+                                               "libgnutls.so.26",
+                                               NULL};
+    int i;
+    for (i=0; libgnutls_name_candidates[i] && !libgnutls_handle; i++)
+        libgnutls_handle = wine_dlopen(libgnutls_name_candidates[i], RTLD_NOW, NULL, 0);
+}
+else
     libgnutls_handle = wine_dlopen(SONAME_LIBGNUTLS, RTLD_NOW, NULL, 0);
     if (!libgnutls_handle)
     {

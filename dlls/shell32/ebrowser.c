@@ -578,7 +578,9 @@ static LRESULT navpane_on_wm_create(HWND hwnd, CREATESTRUCTW *crs)
         if(SUCCEEDED(hr))
         {
             INameSpaceTreeControlEvents *pnstce;
+#ifndef __ANDROID__
             IShellFolder *psfdesktop;
+#endif
             IShellItem *psi;
             IOleWindow *pow;
             LPITEMIDLIST pidl;
@@ -613,12 +615,17 @@ static LRESULT navpane_on_wm_create(HWND hwnd, CREATESTRUCTW *crs)
                 hr = SHCreateShellItem(NULL, NULL, pidl, &psi);
                 if(SUCCEEDED(hr))
                 {
+#ifndef __ANDROID__
                     hr = INameSpaceTreeControl2_AppendRoot(pnstc2, psi, SHCONTF_NONFOLDERS, NSTCRS_VISIBLE, NULL);
+#else
+                    hr = INameSpaceTreeControl2_AppendRoot(pnstc2, psi, SHCONTF_NONFOLDERS, NSTCRS_EXPANDED, NULL);
+#endif
                     IShellItem_Release(psi);
                 }
                 ILFree(pidl);
             }
 
+#ifndef __ANDROID__
             SHGetDesktopFolder(&psfdesktop);
             hr = SHGetItemFromObject((IUnknown*)psfdesktop, &IID_IShellItem, (void**)&psi);
             IShellFolder_Release(psfdesktop);
@@ -627,7 +634,7 @@ static LRESULT navpane_on_wm_create(HWND hwnd, CREATESTRUCTW *crs)
                 hr = INameSpaceTreeControl2_AppendRoot(pnstc2, psi, SHCONTF_FOLDERS, NSTCRS_EXPANDED, NULL);
                 IShellItem_Release(psi);
             }
-
+#endif
             /* TODO:
              * We should advertise IID_INameSpaceTreeControl to the site of the
              * host through its IProfferService interface, if any.

@@ -612,7 +612,8 @@ void state_clipping(struct wined3d_context *context, const struct wined3d_state 
     unsigned int clipplane_count = gl_info->limits.user_clip_distances;
     unsigned int i, enable_mask, disable_mask;
 
-    if (use_vs(state) && !context->d3d_info->vs_clipping)
+    if (use_vs(state) && !context->d3d_info->vs_clipping
+            && !(gl_info->quirks & WINED3D_CX_QUIRK_GLSL_CLIP_BROKEN))
     {
         static BOOL warned;
 
@@ -632,6 +633,9 @@ void state_clipping(struct wined3d_context *context, const struct wined3d_state 
      * shader to update the enabled clipplanes. In case of fixed function, we
      * need to update the clipping field from ffp_vertex_settings. */
     context->shader_update_mask |= 1u << WINED3D_SHADER_TYPE_VERTEX;
+    /* If we are emulating user clip planes, in general we have to regenerate the PS. */
+    if (gl_info->quirks & WINED3D_CX_QUIRK_GLSL_CLIP_BROKEN)
+        context->shader_update_mask |= 1u << WINED3D_SHADER_TYPE_PIXEL;
 
     /* TODO: Keep track of previously enabled clipplanes to avoid unnecessary resetting
      * of already set values
@@ -3630,7 +3634,7 @@ static void sampler(struct wined3d_context *context, const struct wined3d_state 
             }
             else
             {
-                if (FAILED(wined3d_sampler_create(device, &desc, NULL, &sampler)))
+                if (FAILED(wined3d_sampler_create(device, &desc, NULL, &sampler, TRUE)))
                 {
                     ERR("Failed to create sampler.\n");
                     sampler = NULL;

@@ -2682,17 +2682,20 @@ static BOOL netconn_drain_content(data_stream_t *stream, http_request_t *req)
 {
     netconn_stream_t *netconn_stream = (netconn_stream_t*)stream;
     BYTE buf[1024];
-    int len;
+    int len, res;
+    size_t size;
 
-    if(netconn_end_of_data(stream, req))
-        return TRUE;
+    if(netconn_stream->content_length == ~0u)
+        return FALSE;
 
-    do {
-        if(NETCON_recv(req->netconn, buf, sizeof(buf), FALSE, &len) != ERROR_SUCCESS)
+    while(netconn_stream->content_read < netconn_stream->content_length) {
+        size = min(sizeof(buf), netconn_stream->content_length-netconn_stream->content_read);
+        res = NETCON_recv(req->netconn, buf, size, FALSE, &len);
+        if(res || !len)
             return FALSE;
 
         netconn_stream->content_read += len;
-    }while(netconn_stream->content_read < netconn_stream->content_length);
+    }
 
     return TRUE;
 }
@@ -3123,6 +3126,7 @@ static DWORD HTTPREQ_ReadFileEx(object_header_t *hdr, void *buf, DWORD size, DWO
 
     http_request_t *req = (http_request_t*)hdr;
     DWORD res, read, cread, error = ERROR_SUCCESS;
+    BOOL force_sync = FALSE;
 
     TRACE("(%p %p %u %x)\n", req, buf, size, flags);
 
@@ -3131,7 +3135,18 @@ static DWORD HTTPREQ_ReadFileEx(object_header_t *hdr, void *buf, DWORD size, DWO
 
     INTERNET_SendCallback(&req->hdr, req->hdr.dwContext, INTERNET_STATUS_RECEIVING_RESPONSE, NULL, 0);
 
-    if (req->session->appInfo->hdr.dwFlags & INTERNET_FLAG_ASYNC)
+    if(req->session->appInfo->hdr.dwFlags & INTERNET_FLAG_ASYNC) {
+        char name[MAX_PATH], *p;
+        GetModuleFileNameA(GetModuleHandleA(NULL),name,MAX_PATH);
+        p = strrchr(name, '\\');
+        p = p ? p+1 : name;
+        if (!strcasecmp(p,"qw.exe")) {
+            FIXME("Forcing sync read for Quicken\n");
+            force_sync = TRUE;
+        }
+    }
+
+    if (!force_sync && (req->session->appInfo->hdr.dwFlags & INTERNET_FLAG_ASYNC))
     {
         read_file_ex_task_t *task;
 

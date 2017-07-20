@@ -749,6 +749,7 @@ BISON
 FLEX
 TOOLSDIR
 TARGETFLAGS
+FORCE_ALIGN_ARG_BUG_CFLAGS
 LD
 CPPBIN
 ac_ct_CXX
@@ -867,6 +868,7 @@ with_wine_tools
 with_wine64
 enable_largefile
 with_x
+enable_32autole
 enable_acledit
 enable_aclui
 enable_activeds
@@ -1212,6 +1214,8 @@ enable_httpapi
 enable_iccvid
 enable_icmp
 enable_ieframe
+enable_ieinfo5_ocx
+enable_iernonce
 enable_imaadp32_acm
 enable_imagehlp
 enable_imm32
@@ -1418,6 +1422,7 @@ enable_tdi_sys
 enable_traffic
 enable_twain_32
 enable_ucrtbase
+enable_uiautomationcore
 enable_unicows
 enable_updspapi
 enable_url
@@ -1448,6 +1453,7 @@ enable_wimgapi
 enable_windowscodecs
 enable_windowscodecsext
 enable_winealsa_drv
+enable_wineandroid_drv
 enable_winebus_sys
 enable_winecoreaudio_drv
 enable_wined3d
@@ -5069,6 +5075,11 @@ fi
 
 case $host in
   *-darwin*)
+    if test "x$enable_win64" != "xyes"
+    then
+      FORCE_ALIGN_ARG_BUG_CFLAGS="-mno-sse"
+
+    fi
     with_fontconfig=${with_fontconfig:-no}
     ;;
   *-mingw32*|*-cygwin*)
@@ -8337,6 +8348,7 @@ fi
 
   linux-android*)
     DLLFLAGS="$DLLFLAGS -fPIC"
+    enable_wineandroid_drv=${enable_wineandroid_drv:-yes}
     { $as_echo "$as_me:${as_lineno-$LINENO}: checking whether the compiler supports -fPIC -Wl,--export-dynamic" >&5
 $as_echo_n "checking whether the compiler supports -fPIC -Wl,--export-dynamic... " >&6; }
 if ${ac_cv_cflags__fPIC__Wl___export_dynamic+:} false; then :
@@ -8870,8 +8882,8 @@ esac
 
 enable_winecoreaudio_drv=${enable_winecoreaudio_drv:-no}
 enable_wineqtdecoder=${enable_wineqtdecoder:-no}
+enable_wineandroid_drv=${enable_wineandroid_drv:-no}
 enable_winemac_drv=${enable_winemac_drv:-no}
-test "$ac_cv_header_linux_joystick_h" = "yes" -o "$ac_cv_header_IOKit_hid_IOHIDLib_h" = "yes" || enable_winejoystick_drv=${enable_winejoystick_drv:-no}
 
 CROSSTARGET=""
 
@@ -10769,14 +10781,14 @@ _ACEOF
 fi
         if test "x$with_glu" != "xno"
         then
-            { $as_echo "$as_me:${as_lineno-$LINENO}: checking for gluLookAt in -lGLU" >&5
-$as_echo_n "checking for gluLookAt in -lGLU... " >&6; }
-if ${ac_cv_lib_GLU_gluLookAt+:} false; then :
+                        { $as_echo "$as_me:${as_lineno-$LINENO}: checking for -lGLU" >&5
+$as_echo_n "checking for -lGLU... " >&6; }
+if ${ac_cv_lib_soname_GLU+:} false; then :
   $as_echo_n "(cached) " >&6
 else
-  ac_check_lib_save_LIBS=$LIBS
+  ac_check_soname_save_LIBS=$LIBS
 LIBS="-lGLU $OPENGL_LIBS $X_LIBS -lm $X_EXTRA_LIBS $LIBS"
-cat confdefs.h - <<_ACEOF >conftest.$ac_ext
+  cat confdefs.h - <<_ACEOF >conftest.$ac_ext
 /* end confdefs.h.  */
 
 /* Override any GCC internal prototype to avoid an error.
@@ -10795,21 +10807,34 @@ return gluLookAt ();
 }
 _ACEOF
 if ac_fn_c_try_link "$LINENO"; then :
-  ac_cv_lib_GLU_gluLookAt=yes
-else
-  ac_cv_lib_GLU_gluLookAt=no
+  case "$LIBEXT" in
+    dll) ac_cv_lib_soname_GLU=`$ac_cv_path_LDD conftest.exe | grep "GLU" | sed -e "s/dll.*/dll/"';2,$d'` ;;
+    dylib) ac_cv_lib_soname_GLU=`$OTOOL -L conftest$ac_exeext | grep "libGLU\\.[0-9A-Za-z.]*dylib" | sed -e "s/^.*\/\(libGLU\.[0-9A-Za-z.]*dylib\).*$/\1/"';2,$d'` ;;
+    *) ac_cv_lib_soname_GLU=`$READELF -d conftest$ac_exeext | grep "NEEDED.*libGLU\\.$LIBEXT" | sed -e "s/^.*\\[\\(libGLU\\.$LIBEXT[^	 ]*\\)\\].*$/\1/"';2,$d'`
+       if ${ac_cv_lib_soname_GLU:+false} :; then :
+  ac_cv_lib_soname_GLU=`$LDD conftest$ac_exeext | grep "libGLU\\.$LIBEXT" | sed -e "s/^.*\(libGLU\.$LIBEXT[^	 ]*\).*$/\1/"';2,$d'`
+fi ;;
+  esac
 fi
 rm -f core conftest.err conftest.$ac_objext \
     conftest$ac_exeext conftest.$ac_ext
-LIBS=$ac_check_lib_save_LIBS
+  LIBS=$ac_check_soname_save_LIBS
 fi
-{ $as_echo "$as_me:${as_lineno-$LINENO}: result: $ac_cv_lib_GLU_gluLookAt" >&5
-$as_echo "$ac_cv_lib_GLU_gluLookAt" >&6; }
-if test "x$ac_cv_lib_GLU_gluLookAt" = xyes; then :
-  :
-fi
+if ${ac_cv_lib_soname_GLU:+false} :; then :
+  { $as_echo "$as_me:${as_lineno-$LINENO}: result: not found" >&5
+$as_echo "not found" >&6; }
 
-            if test "x$ac_cv_lib_GLU_gluLookAt" != xyes; then :
+else
+  { $as_echo "$as_me:${as_lineno-$LINENO}: result: $ac_cv_lib_soname_GLU" >&5
+$as_echo "$ac_cv_lib_soname_GLU" >&6; }
+
+cat >>confdefs.h <<_ACEOF
+#define SONAME_LIBGLU "$ac_cv_lib_soname_GLU"
+_ACEOF
+
+
+fi
+            if test "x$ac_cv_lib_soname_GLU" = "x"; then :
   case "x$with_glu" in
   x)   as_fn_append wine_notices "|libGLU ${notice_platform}development files not found, GLU won't be supported." ;;
   xno) ;;
@@ -10914,7 +10939,7 @@ esac
 enable_winex11_drv=${enable_winex11_drv:-no}
 fi
 
-test "x$ac_cv_lib_GLU_gluLookAt" != xyes && enable_glu32=${enable_glu32:-no}
+test "x$ac_cv_lib_soname_GLU" = "x" && enable_glu32=${enable_glu32:-no}
 
 if test "$ac_cv_header_CL_cl_h" = "yes"
 then
@@ -15702,6 +15727,69 @@ fi
 
 LIBS=$ac_save_LIBS
 
+ac_save_LIBS=$LIBS
+{ $as_echo "$as_me:${as_lineno-$LINENO}: checking for library containing shm_open" >&5
+$as_echo_n "checking for library containing shm_open... " >&6; }
+if ${ac_cv_search_shm_open+:} false; then :
+  $as_echo_n "(cached) " >&6
+else
+  ac_func_search_save_LIBS=$LIBS
+cat confdefs.h - <<_ACEOF >conftest.$ac_ext
+/* end confdefs.h.  */
+
+/* Override any GCC internal prototype to avoid an error.
+   Use char because int might match the return type of a GCC
+   builtin and then its argument prototype would still apply.  */
+#ifdef __cplusplus
+extern "C"
+#endif
+char shm_open ();
+int
+main ()
+{
+return shm_open ();
+  ;
+  return 0;
+}
+_ACEOF
+for ac_lib in '' rt; do
+  if test -z "$ac_lib"; then
+    ac_res="none required"
+  else
+    ac_res=-l$ac_lib
+    LIBS="-l$ac_lib  $ac_func_search_save_LIBS"
+  fi
+  if ac_fn_c_try_link "$LINENO"; then :
+  ac_cv_search_shm_open=$ac_res
+fi
+rm -f core conftest.err conftest.$ac_objext \
+    conftest$ac_exeext
+  if ${ac_cv_search_shm_open+:} false; then :
+  break
+fi
+done
+if ${ac_cv_search_shm_open+:} false; then :
+
+else
+  ac_cv_search_shm_open=no
+fi
+rm conftest.$ac_ext
+LIBS=$ac_func_search_save_LIBS
+fi
+{ $as_echo "$as_me:${as_lineno-$LINENO}: result: $ac_cv_search_shm_open" >&5
+$as_echo "$ac_cv_search_shm_open" >&6; }
+ac_res=$ac_cv_search_shm_open
+if test "$ac_res" != no; then :
+  test "$ac_res" = "none required" || LIBS="$ac_res $LIBS"
+
+$as_echo "#define HAVE_SHM_OPEN 1" >>confdefs.h
+
+                test "$ac_res" = "none required" || RT_LIBS="$ac_res"
+
+fi
+
+LIBS=$ac_save_LIBS
+
 LDAP_LIBS=""
 
 if test "$ac_cv_header_ldap_h" = "yes" -a "$ac_cv_header_lber_h" = "yes"
@@ -17470,7 +17558,8 @@ ac_config_commands="$ac_config_commands include/stamp-h"
 
 $as_echo_n "creating Makefile rules..." >&6
 
-ALL_VARS_RULES="OPENGL_LIBS = $OPENGL_LIBS
+ALL_VARS_RULES="FORCE_ALIGN_ARG_BUG_CFLAGS = $FORCE_ALIGN_ARG_BUG_CFLAGS
+OPENGL_LIBS = $OPENGL_LIBS
 SOCKET_LIBS = $SOCKET_LIBS
 COREFOUNDATION_LIBS = $COREFOUNDATION_LIBS
 IOKIT_LIBS = $IOKIT_LIBS
@@ -17581,6 +17670,7 @@ ac_config_links="$ac_config_links wine64:tools/winewrapper"
 wine_fn_config_symlink wine64
 fi
 
+wine_fn_config_dll 32autole enable_32autole
 wine_fn_config_dll acledit enable_acledit
 wine_fn_config_dll aclui enable_aclui implib
 wine_fn_config_dll activeds enable_activeds implib
@@ -18005,6 +18095,8 @@ wine_fn_config_dll iccvid enable_iccvid clean
 wine_fn_config_dll icmp enable_icmp
 wine_fn_config_dll ieframe enable_ieframe clean,implib
 wine_fn_config_test dlls/ieframe/tests ieframe_test
+wine_fn_config_dll ieinfo5.ocx enable_ieinfo5_ocx
+wine_fn_config_dll iernonce enable_iernonce
 wine_fn_config_dll ifsmgr.vxd enable_win16
 wine_fn_config_dll imaadp32.acm enable_imaadp32_acm
 wine_fn_config_dll imagehlp enable_imagehlp implib
@@ -18328,6 +18420,7 @@ wine_fn_config_test dlls/twain_32/tests twain_32_test
 wine_fn_config_dll typelib.dll16 enable_win16
 wine_fn_config_dll ucrtbase enable_ucrtbase implib
 wine_fn_config_test dlls/ucrtbase/tests ucrtbase_test
+wine_fn_config_dll uiautomationcore enable_uiautomationcore
 wine_fn_config_dll unicows enable_unicows implib
 wine_fn_config_dll updspapi enable_updspapi
 wine_fn_config_dll url enable_url implib
@@ -18388,6 +18481,7 @@ wine_fn_config_test dlls/windowscodecs/tests windowscodecs_test
 wine_fn_config_dll windowscodecsext enable_windowscodecsext implib
 wine_fn_config_test dlls/windowscodecsext/tests windowscodecsext_test
 wine_fn_config_dll winealsa.drv enable_winealsa_drv
+wine_fn_config_dll wineandroid.drv enable_wineandroid_drv
 wine_fn_config_dll winebus.sys enable_winebus_sys
 wine_fn_config_dll winecoreaudio.drv enable_winecoreaudio_drv
 wine_fn_config_lib winecrt0

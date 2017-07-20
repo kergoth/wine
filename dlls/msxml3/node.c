@@ -28,6 +28,13 @@
 # include <libxml/parser.h>
 # include <libxml/xmlerror.h>
 # include <libxml/HTMLtree.h>
+/*
+ * CrossOver HACK
+ * Avoid relying on presence of symbol _xmlBufContent
+ * in libxml2 on the deployment machine.
+ * For bug 12289.
+ */
+#undef LIBXML2_NEW_BUFFER
 # ifdef SONAME_LIBXSLT
 #  ifdef HAVE_LIBXSLT_PATTERN_H
 #   include <libxslt/pattern.h>

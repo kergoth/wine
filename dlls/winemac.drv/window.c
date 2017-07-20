@@ -1094,7 +1094,7 @@ static void sync_window_position(struct macdrv_win_data *data, UINT swp_flags, c
             macdrv_set_view_frame(data->cocoa_view, frame);
             force_z_order = TRUE;
         }
-        else
+        else if (!EqualRect(&data->whole_rect, old_whole_rect))
             macdrv_set_view_frame(data->cocoa_view, frame);
     }
 
@@ -1186,8 +1186,46 @@ static void set_app_icon(void)
     CFArrayRef images = create_app_icon_images();
     if (images)
     {
-        macdrv_set_application_icon(images);
+        macdrv_set_application_icon(images, NULL);
         CFRelease(images);
+    }
+    else /* CrossOver Hack 13440: Find an icon from the CrossOver app bundle */
+    {
+        const char *cx_root;
+        if ((cx_root = getenv("CX_ROOT")) && cx_root[0])
+        {
+            CFURLRef url, temp;
+            url = CFURLCreateFromFileSystemRepresentation(NULL, (UInt8*)cx_root, strlen(cx_root), TRUE);
+            if (url)
+            {
+                temp = CFURLCreateCopyDeletingLastPathComponent(NULL, url);
+                CFRelease(url);
+                url = temp;
+            }
+            if (url)
+            {
+                temp = CFURLCreateCopyDeletingLastPathComponent(NULL, url);
+                CFRelease(url);
+                url = temp;
+            }
+            if (url)
+            {
+                temp = CFURLCreateCopyAppendingPathComponent(NULL, url, CFSTR("Resources"), TRUE);
+                CFRelease(url);
+                url = temp;
+            }
+            if (url)
+            {
+                temp = CFURLCreateCopyAppendingPathComponent(NULL, url, CFSTR("exeIcon.icns"), FALSE);
+                CFRelease(url);
+                url = temp;
+            }
+            if (url)
+            {
+                macdrv_set_application_icon(NULL, url);
+                CFRelease(url);
+            }
+        }
     }
 }
 
@@ -1235,7 +1273,7 @@ static LRESULT move_window(HWND hwnd, WPARAM wparam)
     MSG msg;
     RECT origRect, movedRect, desktopRect;
     LONG hittest = (LONG)(wparam & 0x0f);
-    POINT capturePoint;
+    POINT capturePoint, pt;
     LONG style = GetWindowLongW(hwnd, GWL_STYLE);
     BOOL moved = FALSE;
     DWORD dwPoint = GetMessagePos();
@@ -1248,6 +1286,7 @@ static LRESULT move_window(HWND hwnd, WPARAM wparam)
 
     capturePoint.x = (short)LOWORD(dwPoint);
     capturePoint.y = (short)HIWORD(dwPoint);
+    pt = capturePoint;
     ClipCursor(NULL);
 
     TRACE("hwnd %p hittest %d, pos %d,%d\n", hwnd, hittest, capturePoint.x, capturePoint.y);
@@ -1297,7 +1336,6 @@ static LRESULT move_window(HWND hwnd, WPARAM wparam)
 
     while(1)
     {
-        POINT pt;
         int dx = 0, dy = 0;
         HMONITOR newmon;
 
@@ -1403,6 +1441,11 @@ static LRESULT move_window(HWND hwnd, WPARAM wparam)
         SetWindowPos(hwnd, 0, origRect.left, origRect.top, 0, 0,
                      SWP_NOACTIVATE | SWP_NOSIZE | SWP_NOZORDER);
     }
+
+    /* CrossOver hack 4274 */
+    /* Windows finishes this off with a WM_MOUSEMOVE with the current position.
+       This message is relied on by some games. */
+    PostMessageW(hwnd, WM_MOUSEMOVE, 0, MAKELONG(pt.x, pt.y));
 
     return 0;
 }
@@ -2021,7 +2064,7 @@ void CDECL macdrv_WindowPosChanged(HWND hwnd, HWND insert_after, UINT swp_flags,
     data->window_rect = *window_rect;
     data->whole_rect  = *visible_rect;
     data->client_rect = *client_rect;
-    if (!data->ulw_layered)
+    if (data->cocoa_window && !data->ulw_layered)
     {
         if (surface) window_surface_add_ref(surface);
         if (new_style & WS_MINIMIZE)

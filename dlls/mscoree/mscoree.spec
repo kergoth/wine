@@ -117,3 +117,6 @@
 @ stdcall _CorExeMain()
 @ stdcall _CorImageUnloading(ptr)
 @ stdcall _CorValidateImage(ptr ptr)
+
+@ stdcall wine_install_mono(ptr ptr ptr long)
+

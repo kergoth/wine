@@ -3379,6 +3379,16 @@ void find_ps_compile_args(const struct wined3d_state *state, const struct wined3
             args->fog = WINED3D_FFP_PS_FOG_OFF;
         }
     }
+    /* Only inser the KIL fragment.texcoord[clip] line if clipping is used.
+     * It is expensive because KIL can break early Z discard. Its cheaper to
+     * have two shaders than KIL needlessly. The same applies to the
+     * clipplane emulation in GLSL with discard. */
+    if (!shader->device->adapter->d3d_info.vs_clipping && use_vs(state)
+            && state->render_states[WINED3D_RS_CLIPPING]
+            && state->render_states[WINED3D_RS_CLIPPLANEENABLE])
+    {
+        args->clip = TRUE;
+    }
 
     if (context->d3d_info->limits.varying_count < wined3d_max_compat_varyings(context->gl_info))
     {

@@ -210,6 +210,7 @@ HRESULT resource_init(struct wined3d_resource *resource, struct wined3d_device *
             ERR("Failed to allocate system memory.\n");
             return E_OUTOFMEMORY;
         }
+        resource->heap_memory = resource->map_heap_memory;
     }
     else
     {
@@ -238,6 +239,7 @@ static void wined3d_resource_destroy_object(void *object)
     struct wined3d_resource *resource = object;
 
     wined3d_resource_free_sysmem(resource);
+    resource->map_heap_memory = NULL;
     context_resource_released(resource->device, resource, resource->type);
     wined3d_resource_release(resource);
 }
@@ -351,19 +353,111 @@ HRESULT CDECL wined3d_resource_map(struct wined3d_resource *resource, unsigned i
             resource, sub_resource_idx, map_desc, debug_box(box), flags);
 
     flags = wined3d_resource_sanitise_map_flags(resource, flags);
+    if (resource->type != WINED3D_RTYPE_BUFFER && (flags & WINED3D_MAP_DISCARD))
+    {
+        switch (resource->map_binding)
+        {
+            case WINED3D_LOCATION_BUFFER:
+            case WINED3D_LOCATION_SYSMEM:
+                break;
+
+            default:
+                FIXME("Implement discard maps with %s map binding.\n",
+                        wined3d_debug_location(resource->map_binding));
+                wined3d_resource_wait_idle(resource);
+        }
+    }
+    else if (resource->type != WINED3D_RTYPE_BUFFER
+            || !(flags & (WINED3D_MAP_NOOVERWRITE | WINED3D_MAP_DISCARD)))
+    {
+        wined3d_resource_wait_idle(resource);
+    }
+
+    if (resource->type == WINED3D_RTYPE_BUFFER)
+    {
+        struct wined3d_buffer *buffer = buffer_from_resource(resource);
+
+        if (buffer->flags & WINED3D_BUFFER_DOUBLEBUFFER)
+            return resource->resource_ops->resource_sub_resource_map(resource,
+                    sub_resource_idx, map_desc, box, flags);
+    }
+    else
+    {
+        struct wined3d_texture *texture = texture_from_resource(resource);
+        struct wined3d_texture_sub_resource *sub_resource =
+                wined3d_texture_get_sub_resource(texture, sub_resource_idx);
+
+        if (!(flags & WINED3D_MAP_READONLY))
+            sub_resource->unmap_dirtify = TRUE;
+
+        if (texture->flags & WINED3D_TEXTURE_PIN_SYSMEM && ((flags & WINED3D_MAP_DISCARD)
+                || (sub_resource->locations & texture->resource.map_binding)))
+            return resource->resource_ops->resource_sub_resource_map(resource,
+                    sub_resource_idx, map_desc, box, flags);
+    }
 
     return wined3d_cs_map(resource->device->cs, resource, sub_resource_idx, map_desc, box, flags);
 }
 
 HRESULT CDECL wined3d_resource_unmap(struct wined3d_resource *resource, unsigned int sub_resource_idx)
 {
+    HRESULT hr;
+
     TRACE("resource %p, sub_resource_idx %u.\n", resource, sub_resource_idx);
 
-    return wined3d_cs_unmap(resource->device->cs, resource, sub_resource_idx);
+    if (resource->type == WINED3D_RTYPE_BUFFER)
+    {
+        struct wined3d_buffer *buffer = buffer_from_resource(resource);
+
+        if (buffer->flags & WINED3D_BUFFER_DOUBLEBUFFER)
+            return resource->resource_ops->resource_sub_resource_unmap(resource, sub_resource_idx);
+    }
+    else
+    {
+        struct wined3d_texture *texture = texture_from_resource(resource);
+        struct wined3d_texture_sub_resource *sub_resource = wined3d_texture_get_sub_resource(texture, sub_resource_idx);
+
+        if (texture->flags & WINED3D_TEXTURE_PIN_SYSMEM)
+        {
+            hr = resource->resource_ops->resource_sub_resource_unmap(resource, sub_resource_idx);
+
+            if (sub_resource->unmap_dirtify)
+            {
+                wined3d_cs_emit_texture_changed(texture->resource.device->cs, texture,
+                        sub_resource_idx, sub_resource->map_buffer, resource->map_heap_memory);
+                sub_resource->unmap_dirtify = FALSE;
+            }
+            return hr;
+        }
+    }
+
+    hr = wined3d_cs_unmap(resource->device->cs, resource, sub_resource_idx);
+
+    if (SUCCEEDED(hr) && resource->type != WINED3D_RTYPE_BUFFER)
+    {
+        struct wined3d_texture *texture = texture_from_resource(resource);
+        struct wined3d_texture_sub_resource *sub_resource =
+                wined3d_texture_get_sub_resource(texture, sub_resource_idx);
+
+        if (sub_resource->unmap_dirtify)
+        {
+            wined3d_cs_emit_texture_changed(texture->resource.device->cs, texture,
+                    sub_resource_idx, sub_resource->map_buffer, resource->map_heap_memory);
+            sub_resource->unmap_dirtify = FALSE;
+        }
+    }
+
+    return hr;
 }
 
 void CDECL wined3d_resource_preload(struct wined3d_resource *resource)
 {
+    if (resource->type == WINED3D_RTYPE_BUFFER && resource->map_count)
+    {
+        WARN("Buffer is mapped, skipping preload.\n");
+        return;
+    }
+
     wined3d_cs_emit_preload_resource(resource->device->cs, resource);
 }
 
@@ -379,7 +473,7 @@ BOOL wined3d_resource_allocate_sysmem(struct wined3d_resource *resource)
     p = (void **)(((ULONG_PTR)mem + align) & ~(RESOURCE_ALIGNMENT - 1)) - 1;
     *p = mem;
 
-    resource->heap_memory = ++p;
+    resource->map_heap_memory = ++p;
 
     return TRUE;
 }

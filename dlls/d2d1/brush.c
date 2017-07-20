@@ -841,6 +841,22 @@ static BOOL d2d_brush_fill_cb(struct d2d_brush *brush, struct d2d_d3d_render_tar
         return TRUE;
     }
 
+    if (brush->type == D2D_BRUSH_TYPE_LINEAR)
+    {
+        D2D1_GRADIENT_STOP stop;
+        color = cb;
+
+        ID2D1GradientStopCollection_GetGradientStops(brush->u.linear.gradient, &stop, 1);
+
+        *color = stop.color;
+        color->a *= brush->opacity;
+        color->r *= color->a;
+        color->g *= color->a;
+        color->b *= color->a;
+
+        return TRUE;
+    }
+
     FIXME("Unhandled brush type %#x.\n", brush->type);
     return FALSE;
 }
@@ -856,7 +872,7 @@ HRESULT d2d_brush_get_ps_cb(struct d2d_brush *brush, struct d2d_brush *opacity_b
     static const size_t brush_sizes[] =
     {
         /* D2D_BRUSH_TYPE_SOLID */  sizeof(D2D1_COLOR_F),
-        /* D2D_BRUSH_TYPE_LINEAR */ 0,
+        /* D2D_BRUSH_TYPE_LINEAR */ sizeof(D2D1_COLOR_F),
         /* D2D_BRUSH_TYPE_BITMAP */ sizeof(struct d2d_bitmap_brush_cb),
     };
 
@@ -950,12 +966,17 @@ void d2d_brush_bind_resources(struct d2d_brush *brush, struct d2d_brush *opacity
     static const float blend_factor[] = {1.0f, 1.0f, 1.0f, 1.0f};
     unsigned int resource_idx = 0, sampler_idx = 0;
     ID3D10Device *device = render_target->device;
-    enum d2d_brush_type opacity_brush_type;
+    enum d2d_brush_type opacity_brush_type, brush_type;
     ID3D10PixelShader *ps;
 
     ID3D10Device_OMSetBlendState(device, render_target->bs, blend_factor, D3D10_DEFAULT_SAMPLE_MASK);
     opacity_brush_type = opacity_brush ? opacity_brush->type : D2D_BRUSH_TYPE_COUNT;
-    if (!(ps = render_target->shape_resources[shape_type].ps[brush->type][opacity_brush_type]))
+
+    brush_type = brush->type;
+    if (brush_type == D2D_BRUSH_TYPE_LINEAR)
+        brush_type = D2D_BRUSH_TYPE_SOLID;
+
+    if (!(ps = render_target->shape_resources[shape_type].ps[brush_type][opacity_brush_type]))
         FIXME("No pixel shader for shape type %#x and brush types %#x/%#x.\n",
                 shape_type, brush->type, opacity_brush_type);
     ID3D10Device_PSSetShader(device, ps);

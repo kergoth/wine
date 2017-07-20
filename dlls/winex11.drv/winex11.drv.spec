@@ -49,6 +49,9 @@
 @ cdecl SystemParametersInfo(long long ptr long) X11DRV_SystemParametersInfo
 @ cdecl ThreadDetach() X11DRV_ThreadDetach
 
+# Adopted X windows
+@ cdecl wine_x11_adopt_window(long long)
+
 # WinTab32
 @ cdecl AttachEventQueueToTablet(long) X11DRV_AttachEventQueueToTablet
 @ cdecl GetCurrentPacket(ptr) X11DRV_GetCurrentPacket

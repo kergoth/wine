@@ -128,6 +128,11 @@ AC_CHECK_TOOL(LD,ld)
 
 case $host in
   *-darwin*)
+dnl Add -mno-sse to work around #13762
+    if test "x$enable_win64" != "xyes"
+    then
+      AC_SUBST(FORCE_ALIGN_ARG_BUG_CFLAGS,"-mno-sse")
+    fi
     with_fontconfig=${with_fontconfig:-no}
     ;;
   *-mingw32*|*-cygwin*)
@@ -846,6 +851,7 @@ case $host_os in
 
   linux-android*)
     DLLFLAGS="$DLLFLAGS -fPIC"
+    enable_wineandroid_drv=${enable_wineandroid_drv:-yes}
     WINE_TRY_CFLAGS([-fPIC -Wl,--export-dynamic],
                     [LDEXECFLAGS="-Wl,--export-dynamic"])
     WINE_TRY_CFLAGS([-fPIC -Wl,--rpath,\$ORIGIN/../lib],
@@ -937,8 +943,8 @@ esac
 
 enable_winecoreaudio_drv=${enable_winecoreaudio_drv:-no}
 enable_wineqtdecoder=${enable_wineqtdecoder:-no}
+enable_wineandroid_drv=${enable_wineandroid_drv:-no}
 enable_winemac_drv=${enable_winemac_drv:-no}
-test "$ac_cv_header_linux_joystick_h" = "yes" -o "$ac_cv_header_IOKit_hid_IOHIDLib_h" = "yes" || enable_winejoystick_drv=${enable_winejoystick_drv:-no}
 
 dnl Check for cross compiler to build test programs
 AC_SUBST(CROSSTARGET,"")
@@ -1142,8 +1148,9 @@ This probably prevents linking to OpenGL. Try deleting the file and restarting c
 		     $X_LIBS -lm $X_EXTRA_LIBS)
         if test "x$with_glu" != "xno"
         then
-            AC_CHECK_LIB(GLU,gluLookAt,[:],,[$OPENGL_LIBS $X_LIBS -lm $X_EXTRA_LIBS])
-            WINE_NOTICE_WITH(glu,[test "x$ac_cv_lib_GLU_gluLookAt" != xyes],
+            dnl *** CrossOver Hack 10798 ***
+            WINE_CHECK_SONAME(GLU,gluLookAt,,,[$OPENGL_LIBS $X_LIBS -lm $X_EXTRA_LIBS])
+            WINE_NOTICE_WITH(glu,[test "x$ac_cv_lib_soname_GLU" = "x"],
                              [libGLU ${notice_platform}development files not found, GLU won't be supported.])
         fi
 
@@ -1167,7 +1174,8 @@ without X support, which probably isn't what you want. You will need
 to install ${notice_platform}development packages of Xlib/Xfree86 at the very least.],
 [enable_winex11_drv])
 
-test "x$ac_cv_lib_GLU_gluLookAt" != xyes && enable_glu32=${enable_glu32:-no}
+dnl *** CrossOver Hack 10798 ***
+test "x$ac_cv_lib_soname_GLU" = "x" && enable_glu32=${enable_glu32:-no}
 
 dnl **** Check for OpenCL ****
 if test "$ac_cv_header_CL_cl_h" = "yes"
@@ -2108,6 +2116,13 @@ AC_SEARCH_LIBS(clock_gettime, rt,
                 test "$ac_res" = "none required" || AC_SUBST(RT_LIBS,"$ac_res")])
 LIBS=$ac_save_LIBS
 
+dnl Check for shm_open which may be in -lrt
+ac_save_LIBS=$LIBS
+AC_SEARCH_LIBS(shm_open, rt,
+               [AC_DEFINE(HAVE_SHM_OPEN, 1, [Define to 1 if you have the `shm_open' function.])
+                test "$ac_res" = "none required" || AC_SUBST(RT_LIBS,"$ac_res")])
+LIBS=$ac_save_LIBS
+
 dnl **** Check for OpenLDAP ***
 AC_SUBST(LDAP_LIBS,"")
 if test "$ac_cv_header_ldap_h" = "yes" -a "$ac_cv_header_lber_h" = "yes"
@@ -2642,6 +2657,7 @@ WINE_CONFIG_SYMLINK(loader,loader,[l_intl.nls])
 WINE_CONFIG_SYMLINK(,tools,[wine],,winewrapper)
 WINE_CONFIG_SYMLINK(,tools,[wine64],enable_win64,winewrapper)
 
+WINE_CONFIG_DLL(32autole)
 WINE_CONFIG_DLL(acledit)
 WINE_CONFIG_DLL(aclui,,[implib])
 WINE_CONFIG_DLL(activeds,,[implib])
@@ -3066,6 +3082,8 @@ WINE_CONFIG_DLL(iccvid,,[clean])
 WINE_CONFIG_DLL(icmp)
 WINE_CONFIG_DLL(ieframe,,[clean,implib])
 WINE_CONFIG_TEST(dlls/ieframe/tests)
+WINE_CONFIG_DLL(ieinfo5.ocx)
+WINE_CONFIG_DLL(iernonce)
 WINE_CONFIG_DLL(ifsmgr.vxd,enable_win16)
 WINE_CONFIG_DLL(imaadp32.acm)
 WINE_CONFIG_DLL(imagehlp,,[implib])
@@ -3389,6 +3407,7 @@ WINE_CONFIG_TEST(dlls/twain_32/tests)
 WINE_CONFIG_DLL(typelib.dll16,enable_win16)
 WINE_CONFIG_DLL(ucrtbase,,[implib])
 WINE_CONFIG_TEST(dlls/ucrtbase/tests)
+WINE_CONFIG_DLL(uiautomationcore)
 WINE_CONFIG_DLL(unicows,,[implib])
 WINE_CONFIG_DLL(updspapi)
 WINE_CONFIG_DLL(url,,[implib])
@@ -3449,6 +3468,7 @@ WINE_CONFIG_TEST(dlls/windowscodecs/tests)
 WINE_CONFIG_DLL(windowscodecsext,,[implib])
 WINE_CONFIG_TEST(dlls/windowscodecsext/tests)
 WINE_CONFIG_DLL(winealsa.drv)
+WINE_CONFIG_DLL(wineandroid.drv)
 WINE_CONFIG_DLL(winebus.sys)
 WINE_CONFIG_DLL(winecoreaudio.drv)
 WINE_CONFIG_LIB(winecrt0)
