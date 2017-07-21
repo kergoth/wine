@@ -1,5 +1,0 @@
-MODULE = uiautomationcore.dll
-IMPORTS = advapi32
-
-C_SRCS = \
-	uia_main.c
