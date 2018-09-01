@@ -53,16 +53,18 @@ WINE_DEFAULT_DEBUG_CHANNEL(esync);
 
 int do_esync(void)
 {
-#ifdef HAVE_SYS_EVENTFD_H
     static int do_esync_cached = -1;
+#ifndef HAVE_SYS_EVENTFD_H
+	static int once;
+#endif
 
     if (do_esync_cached == -1)
         do_esync_cached = getenv("WINEESYNC") && atoi(getenv("WINEESYNC"));
 
+#ifdef HAVE_SYS_EVENTFD_H
     return do_esync_cached;
 #else
-    static int once;
-    if (!once++)
+    if (do_esync_cached && !once++)
         FIXME("eventfd not supported on this platform.\n");
     return 0;
 #endif
