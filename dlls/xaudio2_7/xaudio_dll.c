@@ -1308,14 +1308,10 @@ static void WINAPI XA2M_DestroyVoice(IXAudio2MasteringVoice *iface)
     EnterCriticalSection(&This->lock);
 
     destroy_voice(This);
-#ifdef __APPLE__
-    /* TODO */
-#else
     pthread_mutex_lock(&This->engine_lock);
     This->engine_params.proc = NULL;
     pthread_cond_broadcast(&This->engine_ready);
     pthread_mutex_unlock(&This->engine_lock);
-#endif
 
     WaitForSingleObject(This->engine_thread, INFINITE);
     This->engine_thread = NULL;
@@ -1946,9 +1942,6 @@ static HRESULT WINAPI XAudio2CF_CreateInstance(IClassFactory *iface, IUnknown *p
     InitializeCriticalSection(&object->mst.lock);
     object->mst.lock.DebugInfo->Spare[0] = (DWORD_PTR)(__FILE__ ": XA2MasteringVoice.lock");
 
-#ifdef __APPLE__
-    /* FIXME */
-#else
     pthread_mutex_init(&object->mst.engine_lock, NULL);
     pthread_cond_init(&object->mst.engine_done, NULL);
     pthread_cond_init(&object->mst.engine_ready, NULL);
@@ -1973,7 +1966,6 @@ static HRESULT WINAPI XAudio2CF_CreateInstance(IClassFactory *iface, IUnknown *p
         setenv("PULSE_PROP_application.name", str, 1);
         HeapFree(GetProcessHeap(), 0, str);
     }
-#endif
 
     FAudioCOMConstructWithCustomAllocatorEXT(
         &object->faudio,

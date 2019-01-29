@@ -26,11 +26,7 @@
 #include <FAudio.h>
 #include <FAPO.h>
 
-#ifdef __APPLE__
-/* TODO */
-#else
 #include <pthread.h>
-#endif
 
 typedef struct _XA2XAPOImpl {
     IXAPO *xapo;
@@ -93,13 +89,9 @@ typedef struct _XA2VoiceImpl {
         float *stream;
     } engine_params;
 
-#ifdef __APPLE__
-    /* TODO */
-#else
     HANDLE engine_thread;
     pthread_cond_t engine_done, engine_ready;
     pthread_mutex_t engine_lock;
-#endif
 
     struct list entry;
 } XA2VoiceImpl;
